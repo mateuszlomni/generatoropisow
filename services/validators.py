@@ -5,7 +5,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-REQUIRED_LLM_FIELDS = {"description_short", "description", "warnings", "missing_data"}
+REQUIRED_LLM_FIELDS = {"description_short", "description", "filters", "warnings", "missing_data"}
 FORBIDDEN_TAGS = {"script", "style", "iframe", "img", "a", "meta", "link", "html", "body", "head"}
 ALLOWED_TAGS = {"h2", "h3", "p", "strong", "ul", "li", "table", "tbody", "tr", "td"}
 MARKDOWN_MARKERS = ("```", "```html", "```json")
@@ -18,6 +18,7 @@ class LLMDescriptionResponse(BaseModel):
 
     description_short: str
     description: str
+    filters: list[dict[str, str]]
     warnings: list[str]
     missing_data: list[str]
 
@@ -49,6 +50,9 @@ def validate_llm_response(data: dict[str, Any]) -> tuple[bool, list[str]]:
 
     if not isinstance(data.get("missing_data"), list):
         errors.append("Pole missing_data musi być listą.")
+
+    if not isinstance(data.get("filters"), list):
+        errors.append("Pole filters musi być listą.")
 
     if isinstance(data.get("description_short"), str) and len(data["description_short"]) > 500:
         errors.append("Pole description_short przekracza 500 znaków.")

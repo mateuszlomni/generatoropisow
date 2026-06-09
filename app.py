@@ -20,6 +20,7 @@ from services.excel_service import (
     write_updated_excel,
 )
 from services.prestashop_export import export_prestashop_csv
+from services.product_filters import default_filter_rows, filters_from_json, normalize_filters, update_product_filters
 from services.validators import validate_html
 
 load_dotenv()
@@ -64,6 +65,7 @@ def init_state() -> None:
         "generated_data": None,
         "description_short_editor": "",
         "description_editor": "",
+        "filter_editor": [],
         "product_images": {},
         "authenticated": False,
         "operator_name": "",
@@ -121,6 +123,7 @@ def load_excel(uploaded_excel) -> None:
     st.session_state.generated_data = None
     st.session_state.description_short_editor = ""
     st.session_state.description_editor = ""
+    st.session_state.filter_editor = []
     st.session_state.product_images = {}
 
 
@@ -242,12 +245,62 @@ def get_product_id(product: pd.Series) -> str:
     return str(product.get("id_product", "")).strip()
 
 
+def sync_filter_editor_for_product(product: pd.Series) -> None:
+    """Reset editable filters when the selected product changes."""
+    product_id = get_product_id(product)
+    if st.session_state.get("filter_editor_product_id") == product_id:
+        return
+
+    stored_filters = filters_from_json(product.get("filters_json", ""))
+    if stored_filters:
+        st.session_state.filter_editor = stored_filters
+    else:
+        st.session_state.filter_editor = default_filter_rows(str(product.get("product_name", "")))
+    st.session_state.filter_editor_product_id = product_id
+
+
+def render_filter_editor(product: pd.Series) -> list[dict[str, str]]:
+    """Render editable product filters/features."""
+    sync_filter_editor_for_product(product)
+    st.subheader("Filtry i cechy produktu")
+    st.caption(
+        "AI uzupełnia tylko parametry znalezione w karcie katalogowej. "
+        "Brakujące wartości można wpisać ręcznie po weryfikacji dokumentacji."
+    )
+
+    filter_df = pd.DataFrame(st.session_state.filter_editor)
+    if filter_df.empty:
+        filter_df = pd.DataFrame(columns=["name", "value", "source"])
+
+    edited_df = st.data_editor(
+        filter_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "name": st.column_config.TextColumn("Filtr / cecha", required=False),
+            "value": st.column_config.TextColumn("Wartość", required=False),
+            "source": st.column_config.TextColumn("Źródło z karty", required=False),
+        },
+        key=f"filter_editor_table_{get_product_id(product)}",
+    )
+
+    filters = normalize_filters(edited_df.to_dict("records"))
+    st.session_state.filter_editor = filters
+
+    empty_values = [item["name"] for item in filters if item["name"] and not item["value"]]
+    if empty_values:
+        st.warning("Brak wartości dla filtrów: " + ", ".join(empty_values[:8]))
+
+    return filters
+
+
 def render_image_upload(product: pd.Series) -> list[dict[str, Any]]:
     """Require and preview at least two product images for the selected product."""
     product_id = get_product_id(product)
     st.subheader("Zdjęcia produktu")
     image_files = st.file_uploader(
-        "Załącz minimum 2 zdjęcia produktu",
+        "Załącz minimum 2 zdjęcia produktu: 1) główne PrestaShop, 2) dodatkowe / do szablonu produktu",
         type=["jpg", "jpeg", "png", "webp"],
         accept_multiple_files=True,
         key=f"product_images_upload_{product_id}",
@@ -277,7 +330,8 @@ def render_image_upload(product: pd.Series) -> list[dict[str, Any]]:
         preview_columns = st.columns(min(len(images), 4))
         for index, image in enumerate(images[:4]):
             with preview_columns[index % len(preview_columns)]:
-                st.image(image["bytes"], caption=image["name"], use_container_width=True)
+                role = "Główne zdjęcie PrestaShop" if index == 0 else "Zdjęcie dodatkowe / szablon"
+                st.image(image["bytes"], caption=f"{role}: {image['name']}", use_container_width=True)
 
     return images
 
@@ -328,6 +382,7 @@ def render_generation(product: pd.Series, catalog_text: str) -> None:
             st.session_state.generated_data = generated
             st.session_state.description_short_editor = generated["description_short"]
             st.session_state.description_editor = generated["description"]
+            st.session_state.filter_editor = normalize_filters(generated.get("filters", [])) or st.session_state.filter_editor
             st.success("Opis został wygenerowany. Sprawdź i popraw go przed zapisem.")
         except Exception as exc:
             st.error(f"Nie udało się wygenerować opisu: {exc}")
@@ -442,6 +497,7 @@ def main() -> None:
         selected_images = render_image_upload(selected_product)
 
     render_generation(selected_product, catalog_text)
+    selected_filters = render_filter_editor(selected_product)
     render_description_preview()
 
     st.subheader("Zapis i eksport")
@@ -458,6 +514,7 @@ def main() -> None:
                 st.session_state.description_short_editor,
                 st.session_state.description_editor,
             )
+            updated_df = update_product_filters(updated_df, selected_product.get("id_product", ""), selected_filters)
             for column in ("image_1", "image_2"):
                 if column not in updated_df.columns:
                     updated_df[column] = ""

@@ -11,7 +11,8 @@ def build_system_prompt() -> str:
         "Możesz używać tylko informacji jawnie obecnych w karcie katalogowej lub "
         "bezpośrednio wynikających z nazwy produktu i referencji. Jeśli parametr nie "
         "występuje w dokumentacji, pomiń go albo oznacz jako brak danych w karcie "
-        "katalogowej. Zwracasz wyłącznie poprawny JSON zgodny ze schematem. Nie "
+        "katalogowej. Wyodrębniasz także filtry/cechy produktu do PrestaShop, ale "
+        "tylko wtedy, gdy ich wartości są jawnie obecne w karcie katalogowej. Zwracasz wyłącznie poprawny JSON zgodny ze schematem. Nie "
         "zwracasz Markdown. Nie dodajesz komentarzy poza JSON."
     )
 
@@ -50,10 +51,24 @@ Wymagania dla description:
 - Jeśli karta katalogowa zawiera dane techniczne, umieść je w tabeli.
 - Jeśli brakuje danych do danego pola, pomiń wiersz albo wpisz "brak danych w karcie katalogowej".
 
+Wymagania dla filters:
+- Zwróć listę obiektów z polami name, value, source.
+- name to nazwa filtra/cechy, np. "Rozdzielczość", "Ogniskowa", "Zasilanie".
+- value to wartość dokładnie na podstawie karty katalogowej.
+- source to krótki cytat albo fragment źródłowy z karty, z którego wynika wartość.
+- Nie dodawaj filtrów, których wartości nie ma w karcie.
+- Jeśli produkt jest kamerą, spróbuj wyciągnąć: Typ kamery, Seria, Rozdzielczość, Ogniskowa, Kąt widzenia, Zasięg IR, Kompresja, Przetwornik, Klasa szczelności, Klasa wandaloodporności, Zasilanie, PoE, Karta pamięci, Mikrofon, Funkcje AI.
+- Jeśli któregoś ważnego filtra dla kamery nie ma w karcie, nie wymyślaj wartości; dodaj informację do missing_data.
+- Dla produktów innych niż kamery dobierz tylko sensowne filtry wynikające z dokumentacji, np. typ produktu, seria, napięcie, prąd, moc, IP, montaż, materiał, wymiary.
+
 Zwróć tylko JSON:
 {{
   "description_short": "...",
   "description": "...",
+  "filters": [
+    {{"name": "Rozdzielczość", "value": "5 MP", "source": "rozdzielczość 5 MP"}},
+    {{"name": "Ogniskowa", "value": "2.8 mm", "source": "obiektyw o stałej ogniskowej 2.8 mm"}}
+  ],
   "warnings": [],
   "missing_data": []
 }}

@@ -27,6 +27,10 @@ class MockProvider(LLMProvider):
                 "<h3>Informacje dodatkowe</h3>"
                 "<p>Dane techniczne należy uzupełnić na podstawie właściwej karty katalogowej.</p>"
             ),
+            "filters": [
+                {"name": "Tryb", "value": "mock", "source": "odpowiedź testowa"},
+                {"name": "Źródło danych", "value": "brak rzeczywistej karty", "source": "tryb mock"},
+            ],
             "warnings": ["To jest odpowiedź testowa z mock providera, nie na podstawie karty katalogowej."],
             "missing_data": ["Brak rzeczywistej analizy dokumentacji w trybie mock."],
         }

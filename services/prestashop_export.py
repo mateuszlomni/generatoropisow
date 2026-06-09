@@ -7,7 +7,7 @@ import pandas as pd
 
 def export_prestashop_csv(df: pd.DataFrame) -> bytes:
     """Export PrestaShop import columns as semicolon-separated CSV with UTF-8 BOM."""
-    export_columns = ["id_product", "description_short", "description", "image_1", "image_2"]
+    export_columns = ["id_product", "description_short", "description", "features", "image_1", "image_2", "operator"]
     prepared = df.copy().fillna("")
 
     for column in export_columns:

@@ -13,10 +13,23 @@ DESCRIPTION_SCHEMA: dict[str, Any] = {
     "properties": {
         "description_short": {"type": "string"},
         "description": {"type": "string"},
+        "filters": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {"type": "string"},
+                    "source": {"type": "string"},
+                },
+                "required": ["name", "value", "source"],
+                "additionalProperties": False,
+            },
+        },
         "warnings": {"type": "array", "items": {"type": "string"}},
         "missing_data": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["description_short", "description", "warnings", "missing_data"],
+    "required": ["description_short", "description", "filters", "warnings", "missing_data"],
     "additionalProperties": False,
 }
 
