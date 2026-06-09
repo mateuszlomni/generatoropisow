@@ -4,6 +4,7 @@ import os
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -22,7 +23,7 @@ class SupabaseService:
 
     def __init__(self) -> None:
         load_dotenv()
-        url = os.getenv("SUPABASE_URL", "").strip()
+        url = _normalize_supabase_url(os.getenv("SUPABASE_URL", "").strip())
         key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
         self.bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "product-assets").strip()
 
@@ -273,3 +274,13 @@ def _safe_file_name(value: str) -> str:
     allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
     cleaned = "".join(character if character in allowed else "_" for character in str(value))
     return cleaned.strip("._") or "file"
+
+
+def _normalize_supabase_url(value: str) -> str:
+    """Accept either the project URL or copied REST endpoint and return the project URL."""
+    if not value:
+        return ""
+    parsed = urlparse(value.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return value.strip().rstrip("/")
+    return urlunparse((parsed.scheme, parsed.netloc, "", "", "", "")).rstrip("/")

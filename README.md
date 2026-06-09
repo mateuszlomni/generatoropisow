@@ -117,6 +117,8 @@ SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_STORAGE_BUCKET=product-assets
 ```
 
+`SUPABASE_URL` powinien być adresem projektu, np. `https://abcxyz.supabase.co`. Jeśli przypadkiem wkleisz endpoint Data API z `/rest/v1`, aplikacja spróbuje go automatycznie obciąć do adresu projektu.
+
 Używaj `service_role` tylko po stronie serwera. Nie publikuj tego klucza w repozytorium ani w przeglądarce.
 
 ## Instalacja
