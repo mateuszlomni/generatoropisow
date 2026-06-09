@@ -41,6 +41,18 @@ Jeśli kolumny `description` albo `description_short` nie istnieją, aplikacja u
 - pobranie zaktualizowanego XLSX,
 - pobranie CSV do importu PrestaShop z kolumnami `id_product`, `description_short`, `description`, `image_1`, `image_2`.
 
+## Praca dla wielu operatorów
+
+Aplikacja jest przygotowana do scenariusza, w którym wysyłasz jeden link wielu osobom. Każdy operator pracuje w swojej sesji przeglądarki:
+
+1. wpisuje hasło dostępu, jeśli zostało ustawione,
+2. podaje imię lub inicjały w polu `Operator`,
+3. wgrywa przydzielony plik Excel albo partię,
+4. uzupełnia produkty na podstawie kart katalogowych,
+5. pobiera gotowy XLSX/CSV i odsyła go koordynatorowi.
+
+Dane są trzymane w pamięci sesji użytkownika. Aplikacja nie tworzy wspólnej bazy ani nie scala wyników od 75 osób automatycznie. To celowo prostszy i bezpieczniejszy tryb: każdy operator oddaje swój plik wynikowy.
+
 ## Zdjęcia produktów
 
 Przed zapisem opisu operator musi załączyć minimum dwa zdjęcia produktu. Aplikacja pokazuje miniatury zdjęć i zapisuje nazwy dwóch pierwszych plików w kolumnach `image_1` oraz `image_2` w eksporcie XLSX/CSV.
@@ -105,6 +117,16 @@ Obsługiwane wartości:
 
 Tryb `mock` nie korzysta z API i służy do testowania interfejsu.
 
+## Hasło dostępu
+
+Dla wdrożenia publicznego ustaw zmienną:
+
+```env
+APP_PASSWORD=ustaw_tajne_haslo
+```
+
+Jeśli `APP_PASSWORD` jest puste, aplikacja działa bez ekranu logowania. Przy wysyłce linku do wielu osób zalecane jest ustawienie hasła oraz użycie jednego wspólnego hasła operacyjnego albo osobnej instancji dla każdej grupy.
+
 ## Gemini
 
 W pliku `.env` ustaw:
@@ -138,6 +160,8 @@ Projekt zawiera pliki ułatwiające wdrożenie:
 - `Procfile` - wariant dla platform typu Render/Heroku,
 - `runtime.txt` - wskazanie Pythona 3.11 dla hostingu obsługującego ten format.
 
+Najprostszy wariant dla 75 osób to jeden web service na Render, Railway, Fly.io albo VPS z Dockerem. Po wdrożeniu wysyłasz operatorom URL aplikacji, hasło, ich partie XLSX i instrukcję pobrania gotowego pliku po zakończeniu pracy.
+
 ### Docker
 
 ```bash
@@ -160,6 +184,7 @@ GEMINI_API_KEY = "twoj_klucz"
 GEMINI_MODEL = "gemini-2.5-flash"
 OPENAI_API_KEY = ""
 OPENAI_MODEL = "gpt-4.1-mini"
+APP_PASSWORD = "ustaw_tajne_haslo"
 ```
 
 ### Render

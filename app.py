@@ -24,7 +24,14 @@ from services.validators import validate_html
 
 load_dotenv()
 
-ENV_KEYS = ("LLM_PROVIDER", "GEMINI_API_KEY", "GEMINI_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL")
+ENV_KEYS = (
+    "LLM_PROVIDER",
+    "GEMINI_API_KEY",
+    "GEMINI_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+    "APP_PASSWORD",
+)
 
 
 def load_streamlit_secrets_to_env() -> None:
@@ -36,8 +43,6 @@ def load_streamlit_secrets_to_env() -> None:
     except Exception:
         return
 
-
-load_streamlit_secrets_to_env()
 
 FILTER_ALL = "wszystkie"
 FILTER_NO_DESCRIPTION = "tylko bez opisu"
@@ -60,6 +65,8 @@ def init_state() -> None:
         "description_short_editor": "",
         "description_editor": "",
         "product_images": {},
+        "authenticated": False,
+        "operator_name": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -190,6 +197,33 @@ def render_sidebar() -> None:
     st.sidebar.write(f"Model: **{model or 'brak'}**")
     st.sidebar.info("Opis generowany wyłącznie na podstawie karty katalogowej.")
     st.sidebar.caption("Do LLM trafia tylko nazwa wybranego produktu, referencja i tekst wgranej karty.")
+    st.sidebar.text_input("Operator", key="operator_name", placeholder="Imię lub inicjały")
+
+
+def render_access_gate() -> bool:
+    """Render a simple password gate when APP_PASSWORD is configured."""
+    password = os.getenv("APP_PASSWORD", "").strip()
+    if not password:
+        return True
+
+    if st.session_state.authenticated:
+        return True
+
+    st.title("Generator opisów produktów PrestaShop")
+    st.info("Podaj hasło dostępu, aby rozpocząć pracę.")
+
+    with st.form("access_form"):
+        entered_password = st.text_input("Hasło", type="password")
+        submitted = st.form_submit_button("Wejdź")
+
+    if submitted:
+        if entered_password == password:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Nieprawidłowe hasło.")
+
+    return False
 
 
 def render_product_details(product: pd.Series) -> None:
@@ -341,9 +375,20 @@ def render_description_preview() -> None:
         components.html(full_html, height=520, scrolling=True)
 
 
+def safe_filename_part(value: str) -> str:
+    """Build a conservative filename part from user-provided text."""
+    cleaned = "".join(character if character.isalnum() else "_" for character in value.strip())
+    return "_".join(part for part in cleaned.split("_") if part) or "operator"
+
+
 def main() -> None:
     st.set_page_config(page_title="Generator opisów produktów PrestaShop", layout="wide")
+    load_streamlit_secrets_to_env()
     init_state()
+
+    if not render_access_gate():
+        return
+
     render_sidebar()
 
     st.title("Generator opisów produktów PrestaShop")
@@ -421,6 +466,9 @@ def main() -> None:
             product_mask = updated_df["id_product"].astype(str).str.strip() == product_id
             updated_df.loc[product_mask, "image_1"] = selected_images[0]["name"]
             updated_df.loc[product_mask, "image_2"] = selected_images[1]["name"]
+            if "operator" not in updated_df.columns:
+                updated_df["operator"] = ""
+            updated_df.loc[product_mask, "operator"] = st.session_state.operator_name.strip()
 
             st.session_state.sheet_dfs[selected_sheet] = updated_df
             st.session_state.updated_sheets[selected_sheet] = updated_df
@@ -431,18 +479,20 @@ def main() -> None:
 
     if st.session_state.updated_sheets:
         updated_excel = write_updated_excel(st.session_state.excel_bytes, st.session_state.updated_sheets)
+        operator_part = safe_filename_part(st.session_state.operator_name)
         st.download_button(
             "Pobierz zaktualizowany plik XLSX",
             data=updated_excel,
-            file_name="produkty_z_opisami.xlsx",
+            file_name=f"produkty_z_opisami_{operator_part}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     csv_bytes = export_prestashop_csv(st.session_state.sheet_dfs[selected_sheet])
+    operator_part = safe_filename_part(st.session_state.operator_name)
     st.download_button(
         "Pobierz CSV do importu PrestaShop dla wybranej partii",
         data=csv_bytes,
-        file_name=f"prestashop_{selected_sheet}.csv",
+        file_name=f"prestashop_{safe_filename_part(selected_sheet)}_{operator_part}.csv",
         mime="text/csv",
     )
 
