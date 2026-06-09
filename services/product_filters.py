@@ -39,7 +39,7 @@ GENERIC_FILTER_SUGGESTIONS = [
 ]
 
 
-def _to_bool(value: Any, default: bool = True) -> bool:
+def _to_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     if value is None or value == "":
@@ -59,7 +59,7 @@ def normalize_filters(filters: Any) -> list[dict[str, Any]]:
         name = str(item.get("name", "")).strip()
         value = str(item.get("value", "")).strip()
         source = str(item.get("source", "")).strip()
-        enabled = _to_bool(item.get("enabled", True))
+        enabled = _to_bool(item.get("enabled", False))
         if not name and not value:
             continue
         normalized.append({"enabled": enabled, "name": name, "value": value, "source": source})
@@ -110,10 +110,8 @@ def filters_to_disabled_text(filters: list[dict[str, Any]]) -> str:
 
 
 def default_filter_rows(product_name: str) -> list[dict[str, Any]]:
-    """Return empty filter rows tailored to cameras when the name suggests CCTV equipment."""
-    lowered_name = product_name.lower()
-    suggestions = CAMERA_FILTER_SUGGESTIONS if any(word in lowered_name for word in ("kamera", "ip", "cctv")) else GENERIC_FILTER_SUGGESTIONS
-    return [{"enabled": True, "name": name, "value": "", "source": ""} for name in suggestions]
+    """Return no automatic filters; operators add/select filters manually."""
+    return []
 
 
 def update_product_filters(df: pd.DataFrame, id_product: str | int, filters: list[dict[str, Any]]) -> pd.DataFrame:

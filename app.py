@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from io import BytesIO
 from typing import Any
 
@@ -303,12 +305,25 @@ def render_generation(product: dict[str, Any]) -> None:
 
 def render_filter_editor(product: dict[str, Any]) -> list[dict[str, Any]]:
     st.subheader("Filtry i cechy produktu")
-    st.caption("Zaznaczone filtry trafią do PrestaShop. Odznaczone zostaną zapisane jako odrzucone.")
+    st.caption("Dodaj filtr ręcznie albo wybierz ze słownika. Tylko zaznaczone filtry trafią do PrestaShop.")
+
+    service = get_supabase_service()
+    filter_options = service.list_filter_options()
+    if filter_options:
+        selected_option = st.selectbox("Dodaj filtr ze słownika", [""] + filter_options)
+        if selected_option and st.button("Dodaj wybrany filtr"):
+            existing_names = {str(item.get("name", "")).strip().lower() for item in st.session_state.filter_editor}
+            if selected_option.lower() not in existing_names:
+                st.session_state.filter_editor.append({"enabled": False, "name": selected_option, "value": "", "source": ""})
+                st.rerun()
+
     filter_df = pd.DataFrame(st.session_state.filter_editor)
     if filter_df.empty:
         filter_df = pd.DataFrame(default_filter_rows(str(product.get("product_name", ""))))
     if "enabled" not in filter_df.columns:
-        filter_df.insert(0, "enabled", True)
+        filter_df.insert(0, "enabled", False)
+    if filter_df.empty:
+        filter_df = pd.DataFrame(columns=["enabled", "name", "value", "source"])
 
     edited_df = st.data_editor(
         filter_df,
@@ -316,7 +331,7 @@ def render_filter_editor(product: dict[str, Any]) -> list[dict[str, Any]]:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "enabled": st.column_config.CheckboxColumn("Użyj w PrestaShop", default=True),
+            "enabled": st.column_config.CheckboxColumn("Użyj w PrestaShop", default=False),
             "name": st.column_config.TextColumn("Filtr / cecha"),
             "value": st.column_config.TextColumn("Wartość"),
             "source": st.column_config.TextColumn("Źródło z karty"),
@@ -345,8 +360,25 @@ def render_description_preview() -> None:
 def export_dataframe_to_xlsx(df: pd.DataFrame) -> bytes:
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.fillna("").to_excel(writer, sheet_name="Produkty", index=False)
+        sanitize_dataframe_for_excel(df).to_excel(writer, sheet_name="Produkty", index=False)
     return output.getvalue()
+
+
+def sanitize_dataframe_for_excel(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove control characters rejected by openpyxl."""
+    illegal_chars = re.compile(r"[\x00-\x08\x0B-\x0C\x0E-\x1F]")
+    sanitized = df.fillna("").copy()
+    for column in sanitized.columns:
+        sanitized[column] = sanitized[column].map(
+            lambda value: illegal_chars.sub("", _excel_safe_value(value))
+        )
+    return sanitized
+
+
+def _excel_safe_value(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 def safe_filename_part(value: str) -> str:

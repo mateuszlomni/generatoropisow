@@ -49,13 +49,24 @@ create table if not exists public.product_assets (
 
 create index if not exists product_assets_product_id_idx on public.product_assets(product_id);
 
+create table if not exists public.product_filter_options (
+    id uuid primary key default gen_random_uuid(),
+    name text not null unique,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists product_filter_options_name_idx on public.product_filter_options(name);
+
 alter table public.product_batches enable row level security;
 alter table public.products enable row level security;
 alter table public.product_assets enable row level security;
+alter table public.product_filter_options enable row level security;
 
 drop policy if exists "service role full access batches" on public.product_batches;
 drop policy if exists "service role full access products" on public.products;
 drop policy if exists "service role full access assets" on public.product_assets;
+drop policy if exists "service role full access filter options" on public.product_filter_options;
 
 create policy "service role full access batches"
 on public.product_batches
@@ -71,6 +82,12 @@ with check (auth.role() = 'service_role');
 
 create policy "service role full access assets"
 on public.product_assets
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
+create policy "service role full access filter options"
+on public.product_filter_options
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');

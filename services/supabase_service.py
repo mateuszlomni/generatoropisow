@@ -86,6 +86,20 @@ class SupabaseService:
         )
         return response.data or []
 
+    def list_filter_options(self) -> list[str]:
+        """Return globally saved filter names."""
+        response = self.client.table("product_filter_options").select("name").order("name").execute()
+        return [str(row["name"]) for row in response.data or [] if row.get("name")]
+
+    def upsert_filter_options(self, filters: list[dict[str, Any]]) -> None:
+        """Save newly used filter names to the global dictionary."""
+        names = sorted({str(item.get("name", "")).strip() for item in normalize_filters(filters) if item.get("name")})
+        if not names:
+            return
+        now = datetime.now(UTC).isoformat()
+        records = [{"name": name, "updated_at": now} for name in names]
+        self.client.table("product_filter_options").upsert(records, on_conflict="name").execute()
+
     def save_product_work(
         self,
         *,
@@ -129,6 +143,7 @@ class SupabaseService:
         )
 
         normalized_filters = normalize_filters(filters)
+        self.upsert_filter_options(normalized_filters)
         update_payload = {
             "description_short": description_short,
             "description": description,
