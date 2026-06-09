@@ -11,7 +11,9 @@ def build_system_prompt() -> str:
         "Możesz używać tylko informacji jawnie obecnych w karcie katalogowej lub "
         "bezpośrednio wynikających z nazwy produktu i referencji. Jeśli parametr nie "
         "występuje w dokumentacji, pomiń go albo oznacz jako brak danych w karcie "
-        "katalogowej. Wyodrębniasz także filtry/cechy produktu do PrestaShop, ale "
+        "katalogowej. Jeśli dokumentacja obejmuje wiele wariantów, używasz tylko danych "
+        "jednoznacznie przypisanych do wybranej referencji albo całej serii. Nie przenosisz "
+        "parametrów z innego modelu. Wyodrębniasz także filtry/cechy produktu do PrestaShop, ale "
         "tylko wtedy, gdy ich wartości są jawnie obecne w karcie katalogowej. Zwracasz wyłącznie poprawny JSON zgodny ze schematem. Nie "
         "zwracasz Markdown. Nie dodajesz komentarzy poza JSON."
     )
@@ -34,6 +36,14 @@ Najważniejsza zasada:
 Nie dodawaj żadnych parametrów, których nie ma w karcie katalogowej. Nie dopisuj
 napięcia, prądu, stopnia ochrony IP, wymiarów, materiału, norm, certyfikatów,
 zastosowań ani kompatybilności, jeśli nie są jawnie obecne w źródle.
+
+Karty wspólne dla wielu wariantów:
+- Jeśli karta katalogowa opisuje kilka modeli, wariantów albo referencji, używaj tylko danych,
+  które są jawnie przypisane do nazwy produktu, referencji albo całej serii bez rozróżnienia wariantów.
+- Nie kopiuj parametrów z innego symbolu/modelu tylko dlatego, że jest w tej samej karcie.
+- Jeśli nie da się jednoznacznie dopasować parametrów do referencji "{reference}", napisz opis neutralny,
+  dodaj ostrzeżenie w warnings i wpisz brakujące dane w missing_data.
+- Dla produktów akcesoryjnych bez osobnej karty nie zgaduj funkcji głównego urządzenia.
 
 Wymagania dla description_short:
 - HTML.

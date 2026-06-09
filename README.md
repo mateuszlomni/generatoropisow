@@ -32,7 +32,7 @@ Excel jest importowany do Supabase. Po imporcie operatorzy nie wgrywają już sw
 - filtrowanie produktów bez opisów,
 - wybór jednego produktu,
 - upload karty katalogowej PDF, DOCX lub TXT,
-- obowiązkowe załączenie minimum 2 zdjęć produktu przed zapisem,
+- obowiązkowe załączenie minimum 1 zdjęcia produktu przed zapisem,
 - podgląd załączonych zdjęć,
 - odczyt tekstu z dokumentu,
 - generowanie `description_short` i `description`,
@@ -59,13 +59,13 @@ Dane nie są trzymane jako główne źródło prawdy w pamięci sesji Streamlit.
 
 ## Zdjęcia produktów
 
-Przed zapisem opisu operator musi załączyć minimum dwa zdjęcia produktu. Aplikacja pokazuje miniatury zdjęć i zapisuje nazwy plików w kolumnach `image_main`, `image_template`, `image_1`, `image_2` oraz `all_images` w eksporcie XLSX/CSV.
+Przed zapisem opisu operator musi załączyć minimum jedno zdjęcie produktu. Aplikacja pokazuje miniatury zdjęć i zapisuje nazwy plików w kolumnach `image_main`, `image_template`, `image_1`, `image_2` oraz `all_images` w eksporcie XLSX/CSV.
 
-Pierwsze zdjęcie traktuj jako główne zdjęcie PrestaShop, a drugie jako zdjęcie dodatkowe lub materiał do szablonu produktu.
+Pierwsze zdjęcie traktuj jako główne zdjęcie PrestaShop. Drugie i kolejne zdjęcia są opcjonalne, bo część produktów ma realnie tylko jedno sensowne zdjęcie producenta.
 
 Zdjęcia są wysyłane do Supabase Storage. W bazie i eksporcie XLSX/CSV zapisywane są ścieżki plików, np. `Partia_1/123/image/main_zdjecie.jpg`. To jest lepsze niż osadzanie obrazów w Excelu, bo PrestaShop i importery pracują na plikach, ścieżkach lub URL-ach.
 
-Przed wysłaniem do Supabase Storage zdjęcia są automatycznie konwertowane do WebP, zmniejszane do maksymalnego wymiaru 1600 px i kompresowane. Dzięki temu operator może wgrać duże zdjęcie, a w bazie zostanie zapisana lżejsza wersja gotowa do użycia w sklepie.
+Przed wysłaniem do Supabase Storage zdjęcia są automatycznie wyrównywane do kwadratowego kadru 1600 x 1600 px na białym tle, konwertowane do WebP i kompresowane. Dzięki temu operator może wgrać duże zdjęcie, a w bazie zostanie zapisana lżejsza i bardziej spójna wizualnie wersja gotowa do użycia w sklepie.
 
 W eksporcie dostępne są zarówno ścieżki Storage, jak i URL-e:
 
@@ -102,7 +102,11 @@ Jeśli wartości nie ma w karcie katalogowej, AI ma ją pominąć i dopisać inf
 
 ## Karty katalogowe w eksporcie
 
-Karta katalogowa jest wymagana przed zapisem produktu. Plik jest wysyłany do Supabase Storage, a CSV/XLSX zapisuje ścieżkę w kolumnie `catalog_file`.
+Karta katalogowa jest domyślnie wymagana przed zapisem produktu. Jeśli produkt nie ma osobnej karty katalogowej, operator może zaznaczyć tryb ręczny „Produkt nie ma osobnej karty katalogowej”. Wtedy AI nie generuje opisu bez źródła, a operator może zapisać ręcznie przygotowany opis bez załączania pliku.
+
+Jeśli karta katalogowa obejmuje kilka modeli albo wariantów, opis i filtry powinny używać tylko parametrów jednoznacznie przypisanych do wybranej referencji. Nie należy podkładać karty innego produktu tylko po to, żeby wymusić generowanie opisu.
+
+Jeśli karta jest wgrana, plik jest wysyłany do Supabase Storage, a CSV/XLSX zapisuje ścieżkę w kolumnie `catalog_file`.
 
 Jeśli bucket jest publiczny, eksport zawiera także `catalog_url`. Jeśli bucket jest prywatny, URL może nie być bezpośrednio dostępny publicznie i do importu należy używać ścieżek Storage lub wygenerować podpisane linki w osobnym procesie.
 

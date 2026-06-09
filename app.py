@@ -70,6 +70,7 @@ def init_state() -> None:
         "filter_editor": [],
         "catalog_upload": None,
         "catalog_text": "",
+        "manual_without_catalog": False,
         "image_uploads": [],
         "generated_data": None,
     }
@@ -188,6 +189,7 @@ def reset_editor_for_product(product: dict[str, Any]) -> None:
     st.session_state.filter_editor = normalize_filters(filters) or default_filter_rows(str(product.get("product_name", "")))
     st.session_state.catalog_upload = None
     st.session_state.catalog_text = str(product.get("catalog_text", ""))
+    st.session_state.manual_without_catalog = False
     st.session_state.image_uploads = []
     st.session_state.generated_data = None
 
@@ -231,6 +233,18 @@ def render_product_details(product: dict[str, Any], assets: list[dict[str, Any]]
 
 def render_catalog_upload(product: dict[str, Any]) -> dict[str, Any] | None:
     st.subheader("Karta katalogowa")
+    st.caption("Jeżeli karta obejmuje kilka wariantów, AI ma użyć tylko danych pasujących do wybranej referencji.")
+    manual_without_catalog = st.checkbox(
+        "Produkt nie ma osobnej karty katalogowej - opis uzupełniam ręcznie",
+        value=bool(st.session_state.manual_without_catalog),
+        key=f"manual_without_catalog_{product['id']}",
+    )
+    st.session_state.manual_without_catalog = manual_without_catalog
+    if manual_without_catalog:
+        st.info("Tryb ręczny wyłącza generowanie AI bez źródła i pozwala zapisać opis bez pliku karty.")
+        st.session_state.catalog_upload = None
+        return None
+
     uploaded = st.file_uploader(
         "Wgraj PDF, DOCX albo TXT",
         type=["pdf", "docx", "txt"],
@@ -266,7 +280,7 @@ def render_catalog_upload(product: dict[str, Any]) -> dict[str, Any] | None:
 def render_image_upload(product: dict[str, Any]) -> list[dict[str, Any]]:
     st.subheader("Zdjęcia produktu")
     uploaded_images = st.file_uploader(
-        "Załącz minimum 2 zdjęcia: 1) główne PrestaShop, 2) dodatkowe / szablon",
+        "Załącz minimum 1 zdjęcie: pierwsze będzie zdjęciem głównym PrestaShop",
         type=["jpg", "jpeg", "png", "webp"],
         accept_multiple_files=True,
         key=f"images_{product['id']}",
@@ -277,15 +291,15 @@ def render_image_upload(product: dict[str, Any]) -> list[dict[str, Any]]:
         images.append({"name": uploaded.name, "type": uploaded.type, "bytes": uploaded.getvalue()})
     st.session_state.image_uploads = images
 
-    if len(images) < 2 and not product.get("image_main"):
-        st.warning("Do zapisu wymagane są co najmniej 2 zdjęcia produktu.")
+    if len(images) < 1 and not product.get("image_main"):
+        st.warning("Do zapisu wymagane jest co najmniej 1 zdjęcie produktu.")
     elif images:
         st.success(f"Załączono {len(images)} zdjęcia/zdjęć.")
 
     if images:
         original_total = sum(len(image["bytes"]) for image in images)
         st.caption(
-            "Zdjęcia zostaną automatycznie przekonwertowane do WebP przed zapisem. "
+            "Zdjęcia zostaną wyrównane do kwadratowego kadru i przekonwertowane do WebP przed zapisem. "
             f"Łączny rozmiar wejściowy: {original_total / 1024 / 1024:.2f} MB."
         )
         columns = st.columns(min(len(images), 4))
@@ -300,7 +314,9 @@ def render_image_upload(product: dict[str, Any]) -> list[dict[str, Any]]:
 def render_generation(product: dict[str, Any]) -> None:
     st.subheader("Generowanie i edycja opisu")
     catalog_text = st.session_state.catalog_text
-    can_generate = bool(catalog_text.strip())
+    can_generate = bool(catalog_text.strip()) and not st.session_state.manual_without_catalog
+    if st.session_state.manual_without_catalog:
+        st.info("Tryb ręczny bez karty katalogowej: generowanie AI jest wyłączone, żeby nie tworzyć opisu bez źródła.")
 
     if st.button("Generuj opis", disabled=not can_generate):
         try:
@@ -494,18 +510,19 @@ def main() -> None:
 
     st.subheader("Zapis do Supabase")
     has_description = bool(st.session_state.description_short_editor.strip() or st.session_state.description_editor.strip())
-    has_catalog = bool(st.session_state.catalog_upload or product.get("catalog_file"))
-    has_images = len(st.session_state.image_uploads) >= 2 or bool(product.get("image_main") and product.get("image_template"))
-    can_save = has_description and bool(st.session_state.catalog_upload) and len(st.session_state.image_uploads) >= 2
+    manual_without_catalog = bool(st.session_state.manual_without_catalog)
+    has_catalog = manual_without_catalog or bool(st.session_state.catalog_upload or product.get("catalog_file"))
+    has_images = len(st.session_state.image_uploads) >= 1 or bool(product.get("image_main"))
+    can_save = has_description and has_catalog and has_images
 
     if not has_description:
         st.info("Opis jest wymagany przed zapisem.")
     if not has_catalog:
-        st.info("Karta katalogowa jest wymagana przed zapisem.")
+        st.info("Wgraj kartę katalogową albo zaznacz tryb ręczny dla produktu bez osobnej karty.")
     if not has_images:
-        st.info("Minimum 2 zdjęcia są wymagane przed zapisem.")
+        st.info("Minimum 1 zdjęcie jest wymagane przed zapisem.")
     if product.get("status") == "done":
-        st.caption("Produkt jest już uzupełniony. Ponowny zapis wymaga ponownego wgrania karty i zdjęć, żeby zachować pełny audyt plików.")
+        st.caption("Produkt jest już uzupełniony. Jeśli nie wgrasz nowych plików, aplikacja zachowa istniejące zdjęcia i kartę.")
 
     if st.button("Zapisz produkt w Supabase", disabled=not can_save):
         try:
@@ -517,7 +534,8 @@ def main() -> None:
                     filters=filters,
                     operator=st.session_state.operator_name.strip(),
                     images=st.session_state.image_uploads,
-                    catalog=st.session_state.catalog_upload,
+                    catalog=None if manual_without_catalog else st.session_state.catalog_upload,
+                    manual_without_catalog=manual_without_catalog,
                 )
             st.success("Produkt zapisany w Supabase.")
             st.session_state.selected_product_uuid = ""

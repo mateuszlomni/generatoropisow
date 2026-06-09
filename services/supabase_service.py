@@ -116,15 +116,16 @@ class SupabaseService:
         filters: list[dict[str, Any]],
         operator: str,
         images: list[dict[str, Any]],
-        catalog: dict[str, Any],
+        catalog: dict[str, Any] | None,
+        manual_without_catalog: bool = False,
     ) -> dict[str, Any]:
         """Upload assets and save final operator-approved product data."""
         product_uuid = product["id"]
         batch_name = product.get("batch_name") or self._batch_name(product.get("batch_id", ""))
         id_product = str(product.get("id_product", "")).strip()
 
-        image_paths: list[str] = []
-        image_urls: list[str] = []
+        image_paths = [] if images else _existing_asset_values(product, "all_images", "image_main", "image_template")
+        image_urls = [] if images else _existing_asset_values(product, "all_image_urls", "image_main_url", "image_template_url")
         for index, image in enumerate(images, start=1):
             role = "main" if index == 1 else ("template" if index == 2 else f"extra_{index}")
             optimized_image = optimize_image_to_webp(image)
@@ -144,19 +145,28 @@ class SupabaseService:
             image_paths.append(asset["storage_path"])
             image_urls.append(asset["public_url"])
 
-        catalog_asset = self.upload_asset(
-            product_id=product_uuid,
-            batch_name=batch_name,
-            id_product=id_product,
-            asset_type="catalog",
-            role="catalog",
-            file_name=catalog["name"],
-            file_bytes=catalog["bytes"],
-            content_type=catalog.get("type", ""),
-            original_file_name=catalog["name"],
-            original_size_bytes=len(catalog["bytes"]),
-            stored_size_bytes=len(catalog["bytes"]),
-        )
+        catalog_path = str(product.get("catalog_file", "") or "")
+        catalog_url = str(product.get("catalog_url", "") or "")
+        catalog_text = str(product.get("catalog_text", "") or "")
+        if catalog:
+            catalog_asset = self.upload_asset(
+                product_id=product_uuid,
+                batch_name=batch_name,
+                id_product=id_product,
+                asset_type="catalog",
+                role="catalog",
+                file_name=catalog["name"],
+                file_bytes=catalog["bytes"],
+                content_type=catalog.get("type", ""),
+                original_file_name=catalog["name"],
+                original_size_bytes=len(catalog["bytes"]),
+                stored_size_bytes=len(catalog["bytes"]),
+            )
+            catalog_path = catalog_asset["storage_path"]
+            catalog_url = catalog_asset["public_url"]
+            catalog_text = catalog.get("text", "")
+        elif manual_without_catalog and not catalog_text:
+            catalog_text = "Opis ręczny operatora - produkt bez osobnej karty katalogowej."
 
         normalized_filters = normalize_filters(filters)
         self.upsert_filter_options(normalized_filters)
@@ -176,9 +186,9 @@ class SupabaseService:
             "image_1_url": image_urls[0] if len(image_urls) >= 1 else "",
             "image_2_url": image_urls[1] if len(image_urls) >= 2 else "",
             "all_image_urls": " | ".join(image_urls),
-            "catalog_file": catalog_asset["storage_path"],
-            "catalog_url": catalog_asset["public_url"],
-            "catalog_text": catalog.get("text", ""),
+            "catalog_file": catalog_path,
+            "catalog_url": catalog_url,
+            "catalog_text": catalog_text,
             "operator": operator,
             "status": "done",
             "updated_at": datetime.now(UTC).isoformat(),
@@ -234,20 +244,26 @@ class SupabaseService:
         except Exception:
             public_url = ""
 
-        self.client.table("product_assets").insert(
-            {
-                "product_id": product_id,
-                "asset_type": asset_type,
-                "role": role,
-                "file_name": file_name,
-                "storage_path": storage_path,
-                "public_url": public_url,
-                "content_type": content_type,
-                "original_file_name": original_file_name or file_name,
-                "original_size_bytes": original_size_bytes,
-                "stored_size_bytes": stored_size_bytes or len(file_bytes),
+        asset_payload = {
+            "product_id": product_id,
+            "asset_type": asset_type,
+            "role": role,
+            "file_name": file_name,
+            "storage_path": storage_path,
+            "public_url": public_url,
+            "content_type": content_type,
+            "original_file_name": original_file_name or file_name,
+            "original_size_bytes": original_size_bytes,
+            "stored_size_bytes": stored_size_bytes or len(file_bytes),
+        }
+        try:
+            self.client.table("product_assets").insert(asset_payload).execute()
+        except Exception:
+            legacy_payload = {
+                key: asset_payload[key]
+                for key in ("product_id", "asset_type", "role", "file_name", "storage_path", "public_url", "content_type")
             }
-        ).execute()
+            self.client.table("product_assets").insert(legacy_payload).execute()
         return {"storage_path": storage_path, "public_url": public_url}
 
     def export_products_dataframe(self, batch_id: str | None = None) -> pd.DataFrame:
@@ -317,6 +333,21 @@ def _safe_file_name(value: str) -> str:
     allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
     cleaned = "".join(character if character in allowed else "_" for character in str(value))
     return cleaned.strip("._") or "file"
+
+
+def _existing_asset_values(product: dict[str, Any], all_field: str, first_field: str, second_field: str) -> list[str]:
+    values = [
+        value.strip()
+        for value in str(product.get(all_field, "") or "").split("|")
+        if value.strip()
+    ]
+    if values:
+        return values
+    return [
+        str(product.get(field, "") or "").strip()
+        for field in (first_field, second_field)
+        if str(product.get(field, "") or "").strip()
+    ]
 
 
 def _normalize_supabase_url(value: str) -> str:

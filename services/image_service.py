@@ -16,18 +16,24 @@ def optimize_image_to_webp(
     max_dimension: int = DEFAULT_MAX_IMAGE_DIMENSION,
     quality: int = DEFAULT_WEBP_QUALITY,
 ) -> dict[str, Any]:
-    """Convert an uploaded image to optimized WebP bytes."""
+    """Convert an uploaded image to a square, optimized WebP file."""
     original_bytes = image["bytes"]
     original_name = str(image.get("name", "image")).strip() or "image"
 
     with Image.open(BytesIO(original_bytes)) as source:
         source = ImageOps.exif_transpose(source)
-        if source.mode not in ("RGB", "RGBA"):
-            source = source.convert("RGB")
+        if source.mode not in ("RGB", "RGBA", "LA"):
+            source = source.convert("RGBA")
 
-        width, height = source.size
-        if max(width, height) > max_dimension:
-            source.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        source.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGB", (max_dimension, max_dimension), "white")
+        if source.mode != "RGBA":
+            source = source.convert("RGBA")
+        position = (
+            (max_dimension - source.size[0]) // 2,
+            (max_dimension - source.size[1]) // 2,
+        )
+        canvas.paste(source, position, source)
 
         output = BytesIO()
         save_kwargs: dict[str, Any] = {
@@ -35,10 +41,7 @@ def optimize_image_to_webp(
             "quality": quality,
             "method": 6,
         }
-        if source.mode == "RGBA":
-            save_kwargs["lossless"] = False
-
-        source.save(output, **save_kwargs)
+        canvas.save(output, **save_kwargs)
 
     optimized_bytes = output.getvalue()
     return {
