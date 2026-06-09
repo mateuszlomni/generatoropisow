@@ -1,8 +1,8 @@
 # Generator opisów produktów PrestaShop
 
-Aplikacja Streamlit do półautomatycznego generowania opisów produktów dla sklepu PrestaShop na podstawie pliku Excel z produktami oraz kart katalogowych producenta.
+Aplikacja Streamlit do półautomatycznego generowania opisów produktów dla sklepu PrestaShop na podstawie centralnej bazy Supabase, Excela z produktami oraz kart katalogowych producenta.
 
-Narzędzie jest przeznaczone do pracy operatora: człowiek wybiera produkt, wgrywa kartę katalogową, generuje opis przez LLM, ręcznie sprawdza i poprawia wynik, a dopiero potem zapisuje opis do arkusza.
+Narzędzie jest przeznaczone do pracy wielu operatorów: administrator importuje główny Excel raz do Supabase, operatorzy wybierają produkty z centralnej listy, widzą status uzupełnienia, wgrywają kartę katalogową i zdjęcia, generują opis przez LLM, ręcznie sprawdzają wynik, a dopiero potem zapisują dane do bazy.
 
 ## Najważniejsza zasada
 
@@ -22,12 +22,13 @@ Arkusz `Podsumowanie` jest ignorowany przy wyborze produktów. Arkusze `Partia X
 - `description`
 - `description_short`
 
-Jeśli kolumny `description` albo `description_short` nie istnieją, aplikacja utworzy je podczas zapisu w pamięci.
+Excel jest importowany do Supabase. Po imporcie operatorzy nie wgrywają już swoich kopii Excela do pracy bieżącej, tylko pracują na centralnej liście produktów.
 
 ## Funkcje
 
-- upload pliku XLSX,
-- wybór arkusza / partii,
+- import pliku XLSX do Supabase przez administratora,
+- wybór arkusza / partii z centralnej bazy,
+- wspólny status produktu: do uzupełnienia / uzupełnione,
 - filtrowanie produktów bez opisów,
 - wybór jednego produktu,
 - upload karty katalogowej PDF, DOCX lub TXT,
@@ -39,22 +40,22 @@ Jeśli kolumny `description` albo `description_short` nie istnieją, aplikacja u
 - automatyczne wyciąganie filtrów/cech z karty katalogowej,
 - ręczna edycja filtrów/cech przez operatora,
 - podgląd wygenerowanego HTML przed zapisem,
-- zapis opisu do wybranego wiersza w pamięci aplikacji,
-- pobranie zaktualizowanego XLSX,
-- pobranie pełnego CSV z arkuszem roboczym, opisami, filtrami, zdjęciami, kartą katalogową i operatorem,
-- pobranie paczki ZIP zawierającej XLSX, CSV, zdjęcia i karty katalogowe.
+- zapis opisu, filtrów, statusu, zdjęć i karty katalogowej do Supabase,
+- upload zdjęć i kart katalogowych do Supabase Storage,
+- pobranie XLSX/CSV z bieżącej partii na podstawie danych z bazy.
 
 ## Praca dla wielu operatorów
 
-Aplikacja jest przygotowana do scenariusza, w którym wysyłasz jeden link wielu osobom. Każdy operator pracuje w swojej sesji przeglądarki:
+Aplikacja jest przygotowana do scenariusza, w którym wysyłasz jeden link wielu osobom. Każdy operator pracuje na tej samej bazie Supabase:
 
 1. wpisuje hasło dostępu, jeśli zostało ustawione,
 2. podaje imię lub inicjały w polu `Operator`,
-3. wgrywa przydzielony plik Excel albo partię,
-4. uzupełnia produkty na podstawie kart katalogowych,
-5. pobiera gotowy XLSX/CSV i odsyła go koordynatorowi.
+3. wybiera partię i produkt z centralnej listy,
+4. widzi, które produkty są już uzupełnione,
+5. uzupełnia produkty na podstawie kart katalogowych,
+6. zapisuje wynik do Supabase.
 
-Dane są trzymane w pamięci sesji użytkownika. Aplikacja nie tworzy wspólnej bazy ani nie scala wyników od 75 osób automatycznie. To celowo prostszy i bezpieczniejszy tryb: każdy operator oddaje swój plik wynikowy.
+Dane nie są trzymane jako główne źródło prawdy w pamięci sesji Streamlit. Supabase przechowuje produkty, statusy, opisy, filtry, operatora oraz ścieżki do plików.
 
 ## Zdjęcia produktów
 
@@ -62,7 +63,7 @@ Przed zapisem opisu operator musi załączyć minimum dwa zdjęcia produktu. Apl
 
 Pierwsze zdjęcie traktuj jako główne zdjęcie PrestaShop, a drugie jako zdjęcie dodatkowe lub materiał do szablonu produktu.
 
-Wersja webowa nie przechowuje zdjęć na stałe po zakończeniu sesji. Po pracy operator powinien pobrać paczkę ZIP, ponieważ zawiera ona CSV/XLSX oraz faktyczne pliki zdjęć.
+Zdjęcia są wysyłane do Supabase Storage. W bazie i eksporcie XLSX/CSV zapisywane są ścieżki plików, np. `Partia_1/123/image/main_zdjecie.jpg`. To jest lepsze niż osadzanie obrazów w Excelu, bo PrestaShop i importery pracują na plikach, ścieżkach lub URL-ach.
 
 ## Filtry i cechy PrestaShop
 
@@ -92,7 +93,31 @@ Jeśli wartości nie ma w karcie katalogowej, AI ma ją pominąć i dopisać inf
 
 ## Karty katalogowe w eksporcie
 
-Karta katalogowa jest wymagana przed zapisem produktu. CSV zapisuje nazwę pliku w kolumnie `catalog_file`, a paczka ZIP zawiera rzeczywisty plik karty w folderze `catalogs/`.
+Karta katalogowa jest wymagana przed zapisem produktu. Plik jest wysyłany do Supabase Storage, a CSV/XLSX zapisuje ścieżkę w kolumnie `catalog_file`.
+
+## Supabase
+
+Aplikacja wymaga Supabase. Bez konfiguracji Supabase nie uruchomi trybu pracy produkcyjnej.
+
+1. Utwórz projekt w Supabase.
+2. W SQL Editor uruchom plik `supabase_schema.sql` z tego repozytorium.
+3. W Storage utwórz bucket:
+
+```text
+product-assets
+```
+
+Może być prywatny albo publiczny. Aplikacja zapisuje ścieżki plików w bazie; publiczny URL jest dodatkowy.
+
+4. W Render/Streamlit/secrets ustaw:
+
+```env
+SUPABASE_URL=https://...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_STORAGE_BUCKET=product-assets
+```
+
+Używaj `service_role` tylko po stronie serwera. Nie publikuj tego klucza w repozytorium ani w przeglądarce.
 
 ## Instalacja
 
@@ -158,6 +183,10 @@ Dla wdrożenia publicznego ustaw zmienną:
 
 ```env
 APP_PASSWORD=ustaw_tajne_haslo
+ADMIN_PASSWORD=ustaw_haslo_admina
+SUPABASE_URL=https://...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_STORAGE_BUCKET=product-assets
 ```
 
 Jeśli `APP_PASSWORD` jest puste, aplikacja działa bez ekranu logowania. Przy wysyłce linku do wielu osób zalecane jest ustawienie hasła oraz użycie jednego wspólnego hasła operacyjnego albo osobnej instancji dla każdej grupy.
@@ -220,6 +249,10 @@ GEMINI_MODEL = "gemini-2.5-flash"
 OPENAI_API_KEY = ""
 OPENAI_MODEL = "gpt-4.1-mini"
 APP_PASSWORD = "ustaw_tajne_haslo"
+ADMIN_PASSWORD = "ustaw_haslo_admina"
+SUPABASE_URL = "https://..."
+SUPABASE_SERVICE_ROLE_KEY = "..."
+SUPABASE_STORAGE_BUCKET = "product-assets"
 ```
 
 ### Render
@@ -234,10 +267,10 @@ Aplikacja nie wysyła całego Excela do LLM. Do providera trafiają tylko:
 - referencja,
 - tekst wgranej karty katalogowej.
 
-Długie karty katalogowe są skracane do 80 000 znaków przed wysłaniem do LLM. Aplikacja nie zapisuje wgranych dokumentów na stałe.
+Długie karty katalogowe są skracane do 80 000 znaków przed wysłaniem do LLM. Pliki kart i zdjęć są zapisywane w Supabase Storage, a tekst karty katalogowej może być zapisany w bazie do audytu i ponownego podglądu.
 
 ## Ograniczenia pierwszej wersji
 
 - PDF-y skanowane nie są rozpoznawane przez OCR.
-- Formatowanie oryginalnego Excela może nie zostać zachowane przy eksporcie, ale arkusze i dane są zachowywane.
+- Formatowanie oryginalnego Excela nie jest zachowywane przy eksporcie z Supabase.
 - Import do PrestaShop należy wykonać dopiero po ręcznej kontroli wygenerowanych opisów.

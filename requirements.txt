@@ -8,3 +8,4 @@ pydantic>=2.7.0
 google-genai>=1.0.0
 openai>=1.40.0
 beautifulsoup4>=4.12.3
+supabase>=2.7.4
