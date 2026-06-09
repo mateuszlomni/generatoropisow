@@ -88,7 +88,10 @@ class SupabaseService:
 
     def list_filter_options(self) -> list[str]:
         """Return globally saved filter names."""
-        response = self.client.table("product_filter_options").select("name").order("name").execute()
+        try:
+            response = self.client.table("product_filter_options").select("name").order("name").execute()
+        except Exception:
+            return []
         return [str(row["name"]) for row in response.data or [] if row.get("name")]
 
     def upsert_filter_options(self, filters: list[dict[str, Any]]) -> None:
@@ -98,7 +101,10 @@ class SupabaseService:
             return
         now = datetime.now(UTC).isoformat()
         records = [{"name": name, "updated_at": now} for name in names]
-        self.client.table("product_filter_options").upsert(records, on_conflict="name").execute()
+        try:
+            self.client.table("product_filter_options").upsert(records, on_conflict="name").execute()
+        except Exception:
+            return
 
     def save_product_work(
         self,
