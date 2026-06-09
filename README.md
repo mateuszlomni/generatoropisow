@@ -149,8 +149,18 @@ docker run -p 8501:8501 --env-file .env prestashop-opisy
 
 1. Wgraj projekt do repozytorium Git.
 2. Ustaw główny plik aplikacji jako `app.py`.
-3. Dodaj sekrety lub zmienne środowiskowe odpowiadające plikowi `.env.example`.
+3. Dodaj sekrety odpowiadające plikowi `.env.example`.
 4. Uruchom aplikację.
+
+Przykład sekretów dla Streamlit Cloud:
+
+```toml
+LLM_PROVIDER = "gemini"
+GEMINI_API_KEY = "twoj_klucz"
+GEMINI_MODEL = "gemini-2.5-flash"
+OPENAI_API_KEY = ""
+OPENAI_MODEL = "gpt-4.1-mini"
+```
 
 ### Render
 

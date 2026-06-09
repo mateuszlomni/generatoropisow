@@ -24,6 +24,21 @@ from services.validators import validate_html
 
 load_dotenv()
 
+ENV_KEYS = ("LLM_PROVIDER", "GEMINI_API_KEY", "GEMINI_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL")
+
+
+def load_streamlit_secrets_to_env() -> None:
+    """Expose Streamlit Cloud secrets as environment variables when .env is not present."""
+    try:
+        for key in ENV_KEYS:
+            if not os.getenv(key) and key in st.secrets:
+                os.environ[key] = str(st.secrets[key])
+    except Exception:
+        return
+
+
+load_streamlit_secrets_to_env()
+
 FILTER_ALL = "wszystkie"
 FILTER_NO_DESCRIPTION = "tylko bez opisu"
 FILTER_EMPTY_DESCRIPTION = "tylko z pustym description"
