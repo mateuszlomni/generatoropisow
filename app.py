@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import os
 import re
 from io import BytesIO
@@ -28,6 +30,7 @@ ENV_KEYS = (
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
     "APP_PASSWORD",
+    "APP_AUTH_SECRET",
     "ADMIN_PASSWORD",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
@@ -77,7 +80,14 @@ def init_state() -> None:
 
 def render_access_gate() -> bool:
     password = os.getenv("APP_PASSWORD", "").strip()
-    if not password or st.session_state.authenticated:
+    if not password:
+        return True
+
+    auth_token = st.query_params.get("auth", "")
+    if _is_valid_auth_token(str(auth_token)):
+        st.session_state.authenticated = True
+
+    if st.session_state.authenticated:
         return True
 
     st.title("Generator opisów produktów PrestaShop")
@@ -89,9 +99,29 @@ def render_access_gate() -> bool:
     if submitted:
         if entered_password == password:
             st.session_state.authenticated = True
+            st.query_params["auth"] = _auth_token()
             st.rerun()
         st.error("Nieprawidłowe hasło.")
     return False
+
+
+def _auth_secret() -> str:
+    return (
+        os.getenv("APP_AUTH_SECRET", "").strip()
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        or os.getenv("APP_PASSWORD", "").strip()
+    )
+
+
+def _auth_token() -> str:
+    secret = _auth_secret().encode("utf-8")
+    return hmac.new(secret, b"prestashop-generator-auth-v1", hashlib.sha256).hexdigest()
+
+
+def _is_valid_auth_token(token: str) -> bool:
+    if not token or not _auth_secret():
+        return False
+    return hmac.compare_digest(token, _auth_token())
 
 
 def render_sidebar() -> None:
@@ -105,6 +135,10 @@ def render_sidebar() -> None:
     st.sidebar.write(f"Supabase Storage: **{bucket}**")
     st.sidebar.text_input("Operator", key="operator_name", placeholder="Imię lub inicjały")
     st.sidebar.info("Produkty, statusy, zdjęcia i karty katalogowe są zapisywane centralnie w Supabase.")
+    if os.getenv("APP_PASSWORD", "").strip() and st.sidebar.button("Wyloguj"):
+        st.session_state.authenticated = False
+        st.query_params.clear()
+        st.rerun()
 
 
 def render_admin_import(service: SupabaseService) -> None:

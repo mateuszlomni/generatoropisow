@@ -198,6 +198,7 @@ Dla wdrożenia publicznego ustaw zmienną:
 
 ```env
 APP_PASSWORD=ustaw_tajne_haslo
+APP_AUTH_SECRET=losowy_dlugi_sekret_do_zapamietania_logowania
 ADMIN_PASSWORD=ustaw_haslo_admina
 SUPABASE_URL=https://...
 SUPABASE_SERVICE_ROLE_KEY=...
@@ -205,6 +206,8 @@ SUPABASE_STORAGE_BUCKET=product-assets
 ```
 
 Jeśli `APP_PASSWORD` jest puste, aplikacja działa bez ekranu logowania. Przy wysyłce linku do wielu osób zalecane jest ustawienie hasła oraz użycie jednego wspólnego hasła operacyjnego albo osobnej instancji dla każdej grupy.
+
+Po poprawnym logowaniu aplikacja dodaje podpisany parametr `auth` do adresu URL, dzięki czemu odświeżenie strony albo powrót do zakładki nie wymaga ponownego wpisywania hasła. Ustaw `APP_AUTH_SECRET` na losowy długi sekret, żeby token logowania był stabilny między restartami deployu.
 
 ## Gemini
 
@@ -264,6 +267,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 OPENAI_API_KEY = ""
 OPENAI_MODEL = "gpt-4.1-mini"
 APP_PASSWORD = "ustaw_tajne_haslo"
+APP_AUTH_SECRET = "losowy_dlugi_sekret_do_zapamietania_logowania"
 ADMIN_PASSWORD = "ustaw_haslo_admina"
 SUPABASE_URL = "https://..."
 SUPABASE_SERVICE_ROLE_KEY = "..."

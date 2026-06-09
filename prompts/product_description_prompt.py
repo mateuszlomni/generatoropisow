@@ -38,7 +38,7 @@ zastosowań ani kompatybilności, jeśli nie są jawnie obecne w źródle.
 Wymagania dla description_short:
 - HTML.
 - Jeden akapit <p>...</p>.
-- Maksymalnie 500 znaków.
+- Bezwzględnie maksymalnie 500 znaków razem ze znacznikami HTML; celuj w 420-460 znaków.
 - Bez tabel, Markdown i nagłówków.
 - Musi zawierać nazwę produktu.
 - Naturalny styl sprzedażowo-techniczny bez przesadnego marketingu.
