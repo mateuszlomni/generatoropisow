@@ -37,7 +37,7 @@ class GeminiProvider(LLMProvider):
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     response_mime_type="application/json",
-                    response_schema=schema,
+                    response_schema=_schema_for_gemini(schema),
                     temperature=0.2,
                 ),
             )
@@ -58,6 +58,28 @@ class GeminiProvider(LLMProvider):
             raise ValueError("Gemini nie zwrócił tekstu ani sparsowanego JSON.")
 
         return _parse_json_text(text)
+
+
+def _schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a Gemini-compatible response schema.
+
+    Gemini structured output accepts a subset of JSON Schema and rejects
+    additionalProperties, while OpenAI needs it for strict schemas. Keep the
+    source schema unchanged and strip only the unsupported keys for Gemini.
+    """
+    return _remove_schema_keys(schema, {"additionalProperties"})
+
+
+def _remove_schema_keys(value: Any, keys_to_remove: set[str]) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _remove_schema_keys(child, keys_to_remove)
+            for key, child in value.items()
+            if key not in keys_to_remove
+        }
+    if isinstance(value, list):
+        return [_remove_schema_keys(item, keys_to_remove) for item in value]
+    return value
 
 
 def _parse_json_text(text: str) -> dict[str, Any]:
