@@ -42,9 +42,26 @@ GENERIC_FILTER_SUGGESTIONS = [
 def _to_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
-    if value is None or value == "":
+    if _is_empty(value):
         return default
     return str(value).strip().lower() in {"1", "true", "tak", "yes", "y"}
+
+
+def _is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip().lower() in {"", "none", "nan", "null"}
+
+
+def _clean_text(value: Any) -> str:
+    if _is_empty(value):
+        return ""
+    return str(value).strip()
 
 
 def normalize_filters(filters: Any) -> list[dict[str, Any]]:
@@ -56,11 +73,11 @@ def normalize_filters(filters: Any) -> list[dict[str, Any]]:
     for item in filters:
         if not isinstance(item, dict):
             continue
-        name = str(item.get("name", "")).strip()
-        value = str(item.get("value", "")).strip()
-        source = str(item.get("source", "")).strip()
+        name = _clean_text(item.get("name", ""))
+        value = _clean_text(item.get("value", ""))
+        source = _clean_text(item.get("source", ""))
         enabled = _to_bool(item.get("enabled", False))
-        if not name and not value:
+        if not name:
             continue
         normalized.append({"enabled": enabled, "name": name, "value": value, "source": source})
 
