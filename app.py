@@ -19,6 +19,7 @@ from services.excel_service import (
     update_product_description,
     write_updated_excel,
 )
+from services.export_package import build_export_package
 from services.prestashop_export import export_prestashop_csv
 from services.product_filters import default_filter_rows, filters_from_json, normalize_filters, update_product_filters
 from services.validators import validate_html
@@ -67,6 +68,7 @@ def init_state() -> None:
         "description_editor": "",
         "filter_editor": [],
         "product_images": {},
+        "product_catalogs": {},
         "authenticated": False,
         "operator_name": "",
     }
@@ -125,6 +127,7 @@ def load_excel(uploaded_excel) -> None:
     st.session_state.description_editor = ""
     st.session_state.filter_editor = []
     st.session_state.product_images = {}
+    st.session_state.product_catalogs = {}
 
 
 def product_label(row: pd.Series) -> str:
@@ -259,7 +262,7 @@ def sync_filter_editor_for_product(product: pd.Series) -> None:
     st.session_state.filter_editor_product_id = product_id
 
 
-def render_filter_editor(product: pd.Series) -> list[dict[str, str]]:
+def render_filter_editor(product: pd.Series) -> list[dict[str, Any]]:
     """Render editable product filters/features."""
     sync_filter_editor_for_product(product)
     st.subheader("Filtry i cechy produktu")
@@ -270,7 +273,9 @@ def render_filter_editor(product: pd.Series) -> list[dict[str, str]]:
 
     filter_df = pd.DataFrame(st.session_state.filter_editor)
     if filter_df.empty:
-        filter_df = pd.DataFrame(columns=["name", "value", "source"])
+        filter_df = pd.DataFrame(columns=["enabled", "name", "value", "source"])
+    if "enabled" not in filter_df.columns:
+        filter_df.insert(0, "enabled", True)
 
     edited_df = st.data_editor(
         filter_df,
@@ -278,6 +283,7 @@ def render_filter_editor(product: pd.Series) -> list[dict[str, str]]:
         use_container_width=True,
         hide_index=True,
         column_config={
+            "enabled": st.column_config.CheckboxColumn("Użyj w PrestaShop", default=True),
             "name": st.column_config.TextColumn("Filtr / cecha", required=False),
             "value": st.column_config.TextColumn("Wartość", required=False),
             "source": st.column_config.TextColumn("Źródło z karty", required=False),
@@ -288,9 +294,13 @@ def render_filter_editor(product: pd.Series) -> list[dict[str, str]]:
     filters = normalize_filters(edited_df.to_dict("records"))
     st.session_state.filter_editor = filters
 
-    empty_values = [item["name"] for item in filters if item["name"] and not item["value"]]
+    empty_values = [item["name"] for item in filters if item.get("enabled") and item["name"] and not item["value"]]
     if empty_values:
-        st.warning("Brak wartości dla filtrów: " + ", ".join(empty_values[:8]))
+        st.warning("Zaznaczone filtry bez wartości: " + ", ".join(empty_values[:8]))
+
+    disabled_filters = [item["name"] for item in filters if not item.get("enabled") and item["name"]]
+    if disabled_filters:
+        st.info("Odznaczone filtry nie trafią do kolumny features: " + ", ".join(disabled_filters[:8]))
 
     return filters
 
@@ -336,22 +346,32 @@ def render_image_upload(product: pd.Series) -> list[dict[str, Any]]:
     return images
 
 
-def render_catalog_upload() -> str:
+def render_catalog_upload(product: pd.Series) -> str:
     """Upload and preview a catalog file, returning extracted text."""
+    product_id = get_product_id(product)
     st.subheader("Karta katalogowa")
-    catalog_file = st.file_uploader("Wgraj PDF, DOCX albo TXT", type=["pdf", "docx", "txt"])
+    catalog_file = st.file_uploader("Wgraj PDF, DOCX albo TXT", type=["pdf", "docx", "txt"], key=f"catalog_upload_{product_id}")
 
     if catalog_file is None:
-        st.session_state.catalog_text = ""
-        st.session_state.catalog_file_key = ""
+        stored_catalog = st.session_state.product_catalogs.get(product_id)
+        if stored_catalog:
+            st.info(f"Zapisana karta dla produktu: {stored_catalog['name']}")
+            return str(stored_catalog.get("text", ""))
         st.info("Wgraj kartę katalogową, aby wygenerować opis.")
         return ""
 
     file_key = f"{catalog_file.name}:{catalog_file.size}"
-    if st.session_state.catalog_file_key != file_key:
+    if st.session_state.catalog_file_key != f"{product_id}:{file_key}":
         try:
+            catalog_bytes = catalog_file.getvalue()
             st.session_state.catalog_text = read_catalog_file(catalog_file)
-            st.session_state.catalog_file_key = file_key
+            st.session_state.catalog_file_key = f"{product_id}:{file_key}"
+            st.session_state.product_catalogs[product_id] = {
+                "name": catalog_file.name,
+                "type": catalog_file.type,
+                "bytes": catalog_bytes,
+                "text": st.session_state.catalog_text,
+            }
         except Exception as exc:
             st.session_state.catalog_text = ""
             st.error(f"Nie udało się odczytać karty katalogowej: {exc}")
@@ -493,7 +513,7 @@ def main() -> None:
     with left:
         render_product_details(selected_product)
     with right:
-        catalog_text = render_catalog_upload()
+        catalog_text = render_catalog_upload(selected_product)
         selected_images = render_image_upload(selected_product)
 
     render_generation(selected_product, catalog_text)
@@ -503,9 +523,13 @@ def main() -> None:
     st.subheader("Zapis i eksport")
     has_description = bool(st.session_state.description_short_editor.strip() or st.session_state.description_editor.strip())
     has_required_images = len(selected_images) >= 2
-    can_save = has_description and has_required_images
+    product_id = get_product_id(selected_product)
+    has_catalog = bool(st.session_state.product_catalogs.get(product_id))
+    can_save = has_description and has_required_images and has_catalog
     if not has_required_images:
         st.info("Zapis do Excela będzie dostępny po załączeniu minimum 2 zdjęć produktu.")
+    if not has_catalog:
+        st.info("Zapis do Excela będzie dostępny po załączeniu karty katalogowej produktu.")
     if st.button("Zapisz opis do Excela", disabled=not can_save):
         try:
             updated_df = update_product_description(
@@ -515,14 +539,18 @@ def main() -> None:
                 st.session_state.description_editor,
             )
             updated_df = update_product_filters(updated_df, selected_product.get("id_product", ""), selected_filters)
-            for column in ("image_1", "image_2"):
+            for column in ("image_1", "image_2", "image_main", "image_template", "all_images", "catalog_file"):
                 if column not in updated_df.columns:
                     updated_df[column] = ""
 
-            product_id = get_product_id(selected_product)
             product_mask = updated_df["id_product"].astype(str).str.strip() == product_id
             updated_df.loc[product_mask, "image_1"] = selected_images[0]["name"]
             updated_df.loc[product_mask, "image_2"] = selected_images[1]["name"]
+            updated_df.loc[product_mask, "image_main"] = selected_images[0]["name"]
+            updated_df.loc[product_mask, "image_template"] = selected_images[1]["name"]
+            updated_df.loc[product_mask, "all_images"] = " | ".join(image["name"] for image in selected_images)
+            catalog = st.session_state.product_catalogs.get(product_id, {})
+            updated_df.loc[product_mask, "catalog_file"] = catalog.get("name", "")
             if "operator" not in updated_df.columns:
                 updated_df["operator"] = ""
             updated_df.loc[product_mask, "operator"] = st.session_state.operator_name.strip()
@@ -552,6 +580,22 @@ def main() -> None:
         file_name=f"prestashop_{safe_filename_part(selected_sheet)}_{operator_part}.csv",
         mime="text/csv",
     )
+
+    if st.session_state.updated_sheets:
+        package_excel = write_updated_excel(st.session_state.excel_bytes, st.session_state.updated_sheets)
+        package_csv = export_prestashop_csv(st.session_state.sheet_dfs[selected_sheet])
+        package_bytes = build_export_package(
+            excel_bytes=package_excel,
+            csv_bytes=package_csv,
+            images_by_product=st.session_state.product_images,
+            catalogs_by_product=st.session_state.product_catalogs,
+        )
+        st.download_button(
+            "Pobierz paczkę ZIP: XLSX + CSV + zdjęcia + karty katalogowe",
+            data=package_bytes,
+            file_name=f"paczka_prestashop_{operator_part}.zip",
+            mime="application/zip",
+        )
 
 
 if __name__ == "__main__":

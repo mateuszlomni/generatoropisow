@@ -39,9 +39,17 @@ GENERIC_FILTER_SUGGESTIONS = [
 ]
 
 
-def normalize_filters(filters: Any) -> list[dict[str, str]]:
+def _to_bool(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "tak", "yes", "y"}
+
+
+def normalize_filters(filters: Any) -> list[dict[str, Any]]:
     """Normalize LLM or UI filter data to rows with name, value and source."""
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, Any]] = []
     if not isinstance(filters, list):
         return normalized
 
@@ -51,19 +59,20 @@ def normalize_filters(filters: Any) -> list[dict[str, str]]:
         name = str(item.get("name", "")).strip()
         value = str(item.get("value", "")).strip()
         source = str(item.get("source", "")).strip()
+        enabled = _to_bool(item.get("enabled", True))
         if not name and not value:
             continue
-        normalized.append({"name": name, "value": value, "source": source})
+        normalized.append({"enabled": enabled, "name": name, "value": value, "source": source})
 
     return normalized
 
 
-def filters_to_json(filters: list[dict[str, str]]) -> str:
+def filters_to_json(filters: list[dict[str, Any]]) -> str:
     """Serialize filters for storage in XLSX."""
     return json.dumps(normalize_filters(filters), ensure_ascii=False)
 
 
-def filters_from_json(value: Any) -> list[dict[str, str]]:
+def filters_from_json(value: Any) -> list[dict[str, Any]]:
     """Load filters stored in an XLSX cell."""
     if not isinstance(value, str) or not value.strip():
         return []
@@ -74,10 +83,12 @@ def filters_from_json(value: Any) -> list[dict[str, str]]:
     return normalize_filters(parsed)
 
 
-def filters_to_features_text(filters: list[dict[str, str]]) -> str:
-    """Build a readable PrestaShop feature string from filter rows."""
+def filters_to_features_text(filters: list[dict[str, Any]]) -> str:
+    """Build a readable PrestaShop feature string from enabled filter rows."""
     parts: list[str] = []
     for item in normalize_filters(filters):
+        if not item["enabled"]:
+            continue
         name = item["name"]
         value = item["value"]
         if name and value and value.lower() != "brak danych w karcie katalogowej":
@@ -85,17 +96,30 @@ def filters_to_features_text(filters: list[dict[str, str]]) -> str:
     return " | ".join(parts)
 
 
-def default_filter_rows(product_name: str) -> list[dict[str, str]]:
+def filters_to_disabled_text(filters: list[dict[str, Any]]) -> str:
+    """Build a readable list of filters explicitly excluded by the operator."""
+    parts: list[str] = []
+    for item in normalize_filters(filters):
+        if item["enabled"]:
+            continue
+        name = item["name"]
+        value = item["value"]
+        if name:
+            parts.append(f"{name}: {value}" if value else name)
+    return " | ".join(parts)
+
+
+def default_filter_rows(product_name: str) -> list[dict[str, Any]]:
     """Return empty filter rows tailored to cameras when the name suggests CCTV equipment."""
     lowered_name = product_name.lower()
     suggestions = CAMERA_FILTER_SUGGESTIONS if any(word in lowered_name for word in ("kamera", "ip", "cctv")) else GENERIC_FILTER_SUGGESTIONS
-    return [{"name": name, "value": "", "source": ""} for name in suggestions]
+    return [{"enabled": True, "name": name, "value": "", "source": ""} for name in suggestions]
 
 
-def update_product_filters(df: pd.DataFrame, id_product: str | int, filters: list[dict[str, str]]) -> pd.DataFrame:
+def update_product_filters(df: pd.DataFrame, id_product: str | int, filters: list[dict[str, Any]]) -> pd.DataFrame:
     """Store product filters in JSON and readable feature columns."""
     updated = df.copy().fillna("")
-    for column in ("filters_json", "features"):
+    for column in ("filters_json", "features", "disabled_features"):
         if column not in updated.columns:
             updated[column] = ""
 
@@ -110,4 +134,5 @@ def update_product_filters(df: pd.DataFrame, id_product: str | int, filters: lis
     normalized = normalize_filters(filters)
     updated.loc[mask, "filters_json"] = filters_to_json(normalized)
     updated.loc[mask, "features"] = filters_to_features_text(normalized)
+    updated.loc[mask, "disabled_features"] = filters_to_disabled_text(normalized)
     return updated

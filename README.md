@@ -41,7 +41,8 @@ Jeśli kolumny `description` albo `description_short` nie istnieją, aplikacja u
 - podgląd wygenerowanego HTML przed zapisem,
 - zapis opisu do wybranego wiersza w pamięci aplikacji,
 - pobranie zaktualizowanego XLSX,
-- pobranie CSV do importu PrestaShop z kolumnami `id_product`, `description_short`, `description`, `features`, `image_1`, `image_2`, `operator`.
+- pobranie pełnego CSV z arkuszem roboczym, opisami, filtrami, zdjęciami, kartą katalogową i operatorem,
+- pobranie paczki ZIP zawierającej XLSX, CSV, zdjęcia i karty katalogowe.
 
 ## Praca dla wielu operatorów
 
@@ -57,15 +58,17 @@ Dane są trzymane w pamięci sesji użytkownika. Aplikacja nie tworzy wspólnej 
 
 ## Zdjęcia produktów
 
-Przed zapisem opisu operator musi załączyć minimum dwa zdjęcia produktu. Aplikacja pokazuje miniatury zdjęć i zapisuje nazwy dwóch pierwszych plików w kolumnach `image_1` oraz `image_2` w eksporcie XLSX/CSV.
+Przed zapisem opisu operator musi załączyć minimum dwa zdjęcia produktu. Aplikacja pokazuje miniatury zdjęć i zapisuje nazwy plików w kolumnach `image_main`, `image_template`, `image_1`, `image_2` oraz `all_images` w eksporcie XLSX/CSV.
 
 Pierwsze zdjęcie traktuj jako główne zdjęcie PrestaShop, a drugie jako zdjęcie dodatkowe lub materiał do szablonu produktu.
 
-Wersja webowa nie przechowuje zdjęć na stałe po zakończeniu sesji. Do importu PrestaShop zdjęcia powinny zostać osobno umieszczone w miejscu dostępnym dla sklepu, np. jako pliki na serwerze lub publiczne adresy URL zgodnie z docelowym procesem importu.
+Wersja webowa nie przechowuje zdjęć na stałe po zakończeniu sesji. Po pracy operator powinien pobrać paczkę ZIP, ponieważ zawiera ona CSV/XLSX oraz faktyczne pliki zdjęć.
 
 ## Filtry i cechy PrestaShop
 
 AI próbuje wyciągnąć filtry/cechy produktu z karty katalogowej i pokazuje je w edytowalnej tabeli. Operator może poprawić wartości albo dopisać brakujące parametry ręcznie, ale tylko po sprawdzeniu dokumentacji.
+
+Każdy filtr ma checkbox `Użyj w PrestaShop`. Zaznaczone filtry trafiają do kolumny `features`. Odznaczone filtry zostają zapisane w `filters_json` oraz w czytelnej kolumnie `disabled_features`, ale nie trafiają do `features`.
 
 Dla kamer aplikacja szczególnie pilnuje parametrów takich jak:
 
@@ -85,7 +88,11 @@ Dla kamer aplikacja szczególnie pilnuje parametrów takich jak:
 - mikrofon,
 - funkcje AI.
 
-Jeśli wartości nie ma w karcie katalogowej, AI ma ją pominąć i dopisać informację do brakujących danych. W XLSX filtry są zapisywane w kolumnach `filters_json` oraz `features`. CSV eksportuje kolumnę `features` w formacie czytelnym do dalszego mapowania w imporcie PrestaShop.
+Jeśli wartości nie ma w karcie katalogowej, AI ma ją pominąć i dopisać informację do brakujących danych. W XLSX filtry są zapisywane w kolumnach `filters_json`, `features` oraz `disabled_features`. CSV eksportuje pełny arkusz, żeby koordynator widział zarówno filtry aktywne, jak i odrzucone.
+
+## Karty katalogowe w eksporcie
+
+Karta katalogowa jest wymagana przed zapisem produktu. CSV zapisuje nazwę pliku w kolumnie `catalog_file`, a paczka ZIP zawiera rzeczywisty plik karty w folderze `catalogs/`.
 
 ## Instalacja
 
