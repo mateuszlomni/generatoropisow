@@ -19,10 +19,16 @@ def export_prestashop_csv(df: pd.DataFrame) -> bytes:
         "filters_json",
         "image_main",
         "image_template",
+        "image_main_url",
+        "image_template_url",
         "image_1",
         "image_2",
+        "image_1_url",
+        "image_2_url",
         "all_images",
+        "all_image_urls",
         "catalog_file",
+        "catalog_url",
         "operator",
     ]
     prepared = _sanitize_for_csv(df.copy().fillna(""))

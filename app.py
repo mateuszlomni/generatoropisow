@@ -249,6 +249,11 @@ def render_image_upload(product: dict[str, Any]) -> list[dict[str, Any]]:
         st.success(f"Załączono {len(images)} zdjęcia/zdjęć.")
 
     if images:
+        original_total = sum(len(image["bytes"]) for image in images)
+        st.caption(
+            "Zdjęcia zostaną automatycznie przekonwertowane do WebP przed zapisem. "
+            f"Łączny rozmiar wejściowy: {original_total / 1024 / 1024:.2f} MB."
+        )
         columns = st.columns(min(len(images), 4))
         for index, image in enumerate(images[:4]):
             role = "Główne PrestaShop" if index == 0 else "Dodatkowe / szablon"

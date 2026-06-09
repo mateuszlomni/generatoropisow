@@ -23,7 +23,13 @@ create table if not exists public.products (
     image_1 text not null default '',
     image_2 text not null default '',
     all_images text not null default '',
+    image_main_url text not null default '',
+    image_template_url text not null default '',
+    image_1_url text not null default '',
+    image_2_url text not null default '',
+    all_image_urls text not null default '',
     catalog_file text not null default '',
+    catalog_url text not null default '',
     catalog_text text not null default '',
     status text not null default 'todo',
     operator text not null default '',
@@ -35,6 +41,13 @@ create table if not exists public.products (
 create index if not exists products_batch_id_idx on public.products(batch_id);
 create index if not exists products_status_idx on public.products(status);
 
+alter table public.products add column if not exists image_main_url text not null default '';
+alter table public.products add column if not exists image_template_url text not null default '';
+alter table public.products add column if not exists image_1_url text not null default '';
+alter table public.products add column if not exists image_2_url text not null default '';
+alter table public.products add column if not exists all_image_urls text not null default '';
+alter table public.products add column if not exists catalog_url text not null default '';
+
 create table if not exists public.product_assets (
     id uuid primary key default gen_random_uuid(),
     product_id uuid not null references public.products(id) on delete cascade,
@@ -44,10 +57,17 @@ create table if not exists public.product_assets (
     storage_path text not null,
     public_url text not null default '',
     content_type text not null default '',
+    original_file_name text not null default '',
+    original_size_bytes bigint not null default 0,
+    stored_size_bytes bigint not null default 0,
     created_at timestamptz not null default now()
 );
 
 create index if not exists product_assets_product_id_idx on public.product_assets(product_id);
+
+alter table public.product_assets add column if not exists original_file_name text not null default '';
+alter table public.product_assets add column if not exists original_size_bytes bigint not null default 0;
+alter table public.product_assets add column if not exists stored_size_bytes bigint not null default 0;
 
 create table if not exists public.product_filter_options (
     id uuid primary key default gen_random_uuid(),

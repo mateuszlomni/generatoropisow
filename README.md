@@ -65,6 +65,13 @@ Pierwsze zdjęcie traktuj jako główne zdjęcie PrestaShop, a drugie jako zdję
 
 Zdjęcia są wysyłane do Supabase Storage. W bazie i eksporcie XLSX/CSV zapisywane są ścieżki plików, np. `Partia_1/123/image/main_zdjecie.jpg`. To jest lepsze niż osadzanie obrazów w Excelu, bo PrestaShop i importery pracują na plikach, ścieżkach lub URL-ach.
 
+Przed wysłaniem do Supabase Storage zdjęcia są automatycznie konwertowane do WebP, zmniejszane do maksymalnego wymiaru 1600 px i kompresowane. Dzięki temu operator może wgrać duże zdjęcie, a w bazie zostanie zapisana lżejsza wersja gotowa do użycia w sklepie.
+
+W eksporcie dostępne są zarówno ścieżki Storage, jak i URL-e:
+
+- `image_main`, `image_template`, `image_1`, `image_2`, `all_images`,
+- `image_main_url`, `image_template_url`, `image_1_url`, `image_2_url`, `all_image_urls`.
+
 ## Filtry i cechy PrestaShop
 
 AI próbuje wyciągnąć filtry/cechy produktu z karty katalogowej i pokazuje je w edytowalnej tabeli. Operator może poprawić wartości albo dopisać brakujące parametry ręcznie, ale tylko po sprawdzeniu dokumentacji.
@@ -97,6 +104,8 @@ Jeśli wartości nie ma w karcie katalogowej, AI ma ją pominąć i dopisać inf
 
 Karta katalogowa jest wymagana przed zapisem produktu. Plik jest wysyłany do Supabase Storage, a CSV/XLSX zapisuje ścieżkę w kolumnie `catalog_file`.
 
+Jeśli bucket jest publiczny, eksport zawiera także `catalog_url`. Jeśli bucket jest prywatny, URL może nie być bezpośrednio dostępny publicznie i do importu należy używać ścieżek Storage lub wygenerować podpisane linki w osobnym procesie.
+
 ## Supabase
 
 Aplikacja wymaga Supabase. Bez konfiguracji Supabase nie uruchomi trybu pracy produkcyjnej.
@@ -123,7 +132,7 @@ SUPABASE_STORAGE_BUCKET=product-assets
 
 Używaj `service_role` tylko po stronie serwera. Nie publikuj tego klucza w repozytorium ani w przeglądarce.
 
-Po aktualizacjach aplikacji możesz uruchomić `supabase_schema.sql` ponownie. Skrypt używa `create table if not exists`, więc dopisze brakujące tabele, np. słownik filtrów `product_filter_options`, bez kasowania istniejących produktów.
+Po aktualizacjach aplikacji możesz uruchomić `supabase_schema.sql` ponownie. Skrypt używa `create table if not exists` oraz `alter table ... add column if not exists`, więc dopisze brakujące tabele i kolumny, np. słownik filtrów, URL-e zdjęć i metadane kompresji, bez kasowania istniejących produktów.
 
 ## Instalacja
 

@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from supabase import Client, create_client
 
 from services.excel_service import get_product_sheets, load_workbook_from_upload, read_sheet_to_dataframe
+from services.image_service import optimize_image_to_webp
 from services.product_filters import (
     filters_to_disabled_text,
     filters_to_features_text,
@@ -123,21 +124,27 @@ class SupabaseService:
         id_product = str(product.get("id_product", "")).strip()
 
         image_paths: list[str] = []
+        image_urls: list[str] = []
         for index, image in enumerate(images, start=1):
             role = "main" if index == 1 else ("template" if index == 2 else f"extra_{index}")
-            path = self.upload_asset(
+            optimized_image = optimize_image_to_webp(image)
+            asset = self.upload_asset(
                 product_id=product_uuid,
                 batch_name=batch_name,
                 id_product=id_product,
                 asset_type="image",
                 role=role,
-                file_name=image["name"],
-                file_bytes=image["bytes"],
-                content_type=image.get("type", ""),
+                file_name=optimized_image["name"],
+                file_bytes=optimized_image["bytes"],
+                content_type=optimized_image["type"],
+                original_file_name=optimized_image.get("original_name", image["name"]),
+                original_size_bytes=optimized_image.get("original_size", len(image["bytes"])),
+                stored_size_bytes=optimized_image.get("optimized_size", len(optimized_image["bytes"])),
             )
-            image_paths.append(path)
+            image_paths.append(asset["storage_path"])
+            image_urls.append(asset["public_url"])
 
-        catalog_path = self.upload_asset(
+        catalog_asset = self.upload_asset(
             product_id=product_uuid,
             batch_name=batch_name,
             id_product=id_product,
@@ -146,6 +153,9 @@ class SupabaseService:
             file_name=catalog["name"],
             file_bytes=catalog["bytes"],
             content_type=catalog.get("type", ""),
+            original_file_name=catalog["name"],
+            original_size_bytes=len(catalog["bytes"]),
+            stored_size_bytes=len(catalog["bytes"]),
         )
 
         normalized_filters = normalize_filters(filters)
@@ -161,7 +171,13 @@ class SupabaseService:
             "image_1": image_paths[0] if len(image_paths) >= 1 else "",
             "image_2": image_paths[1] if len(image_paths) >= 2 else "",
             "all_images": " | ".join(image_paths),
-            "catalog_file": catalog_path,
+            "image_main_url": image_urls[0] if len(image_urls) >= 1 else "",
+            "image_template_url": image_urls[1] if len(image_urls) >= 2 else "",
+            "image_1_url": image_urls[0] if len(image_urls) >= 1 else "",
+            "image_2_url": image_urls[1] if len(image_urls) >= 2 else "",
+            "all_image_urls": " | ".join(image_urls),
+            "catalog_file": catalog_asset["storage_path"],
+            "catalog_url": catalog_asset["public_url"],
             "catalog_text": catalog.get("text", ""),
             "operator": operator,
             "status": "done",
@@ -187,7 +203,10 @@ class SupabaseService:
         file_name: str,
         file_bytes: bytes,
         content_type: str = "",
-    ) -> str:
+        original_file_name: str = "",
+        original_size_bytes: int = 0,
+        stored_size_bytes: int = 0,
+    ) -> dict[str, str]:
         """Upload one file to Supabase Storage and register it in product_assets."""
         storage_path = "/".join(
             [
@@ -224,9 +243,12 @@ class SupabaseService:
                 "storage_path": storage_path,
                 "public_url": public_url,
                 "content_type": content_type,
+                "original_file_name": original_file_name or file_name,
+                "original_size_bytes": original_size_bytes,
+                "stored_size_bytes": stored_size_bytes or len(file_bytes),
             }
         ).execute()
-        return storage_path
+        return {"storage_path": storage_path, "public_url": public_url}
 
     def export_products_dataframe(self, batch_id: str | None = None) -> pd.DataFrame:
         query = self.client.table("products").select("*").order("id_product")
