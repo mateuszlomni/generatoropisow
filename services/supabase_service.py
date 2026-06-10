@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
@@ -294,11 +296,18 @@ class SupabaseService:
             bucket.remove([storage_path])
         except Exception:
             pass
-        bucket.upload(
-            storage_path,
-            file_bytes,
-            {"content-type": content_type or "application/octet-stream"},
-        )
+        try:
+            bucket.upload(
+                storage_path,
+                file_bytes,
+                {"content-type": content_type or "application/octet-stream"},
+            )
+        except Exception as exc:
+            if "InvalidKey" in str(exc) or "Invalid key" in str(exc):
+                raise ValueError(
+                    "Supabase odrzucił ścieżkę pliku. Zmień nazwę pliku albo nazwę załącznika na krótszą, bez nietypowych znaków."
+                ) from exc
+            raise
 
         public_url = ""
         try:
@@ -387,14 +396,24 @@ class SupabaseService:
 
 
 def _safe_path_part(value: str) -> str:
-    cleaned = "".join(character if character.isalnum() else "_" for character in str(value))
-    return "_".join(part for part in cleaned.split("_") if part) or "item"
+    cleaned = _ascii_slug(str(value), allowed_extra="")
+    return cleaned[:120].strip("_") or "item"
 
 
 def _safe_file_name(value: str) -> str:
-    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-    cleaned = "".join(character if character in allowed else "_" for character in str(value))
-    return cleaned.strip("._") or "file"
+    stem, extension = os.path.splitext(str(value))
+    safe_stem = _ascii_slug(stem, allowed_extra="")
+    safe_extension = _ascii_slug(extension.lstrip("."), allowed_extra="")
+    if safe_extension:
+        return f"{safe_stem[:120].strip('_') or 'file'}.{safe_extension[:16]}"
+    return safe_stem[:140].strip("_") or "file"
+
+
+def _ascii_slug(value: str, *, allowed_extra: str = "") -> str:
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    allowed_pattern = rf"[^A-Za-z0-9{re.escape(allowed_extra)}]+"
+    cleaned = re.sub(allowed_pattern, "_", normalized)
+    return "_".join(part for part in cleaned.split("_") if part)
 
 
 def _existing_asset_values(product: dict[str, Any], all_field: str, first_field: str, second_field: str) -> list[str]:
