@@ -44,6 +44,22 @@ STATUS_LABELS = {
     "done": "uzupełnione",
 }
 
+MAX_PRODUCT_ATTACHMENTS = 8
+ATTACHMENT_FILE_TYPES = [
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "csv",
+    "txt",
+    "jpg",
+    "jpeg",
+    "png",
+    "webp",
+    "zip",
+]
+
 APP_CSS = """
 <style>
 div[data-testid="stMetric"] {
@@ -127,6 +143,7 @@ def init_state() -> None:
         "catalog_text": "",
         "manual_without_catalog": False,
         "image_uploads": [],
+        "attachment_uploads": [],
         "generated_data": None,
     }
     for key, value in defaults.items():
@@ -202,9 +219,10 @@ def render_sidebar() -> None:
 1. Wybierz partię i produkt.
 2. Wgraj kartę katalogową albo zaznacz tryb ręczny.
 3. Wgraj minimum jedno zdjęcie.
-4. Wygeneruj lub wpisz opis.
-5. Sprawdź filtry i zaznacz tylko pewne dane.
-6. Zapisz produkt w Supabase.
+4. Opcjonalnie dodaj załączniki produktu.
+5. Wygeneruj lub wpisz opis.
+6. Sprawdź filtry i zaznacz tylko pewne dane.
+7. Zapisz produkt w Supabase.
 """
         )
     if os.getenv("APP_PASSWORD", "").strip() and st.sidebar.button("Wyloguj"):
@@ -254,12 +272,19 @@ def product_has_image(product: dict[str, Any]) -> bool:
     return bool(str(product.get("image_main", "") or "").strip())
 
 
+def product_attachments(assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only product attachment assets."""
+    return [asset for asset in assets if str(asset.get("asset_type", "")).strip() == "attachment"]
+
+
 def get_product_readiness(product: dict[str, Any]) -> dict[str, bool]:
     """Return coarse product completion signals used by the guided UI."""
     has_description = bool(st.session_state.description_short_editor.strip() and st.session_state.description_editor.strip())
     manual_without_catalog = bool(st.session_state.manual_without_catalog)
     has_catalog = manual_without_catalog or bool(st.session_state.catalog_upload) or product_has_catalog(product)
     has_images = len(st.session_state.image_uploads) >= 1 or product_has_image(product)
+    attachment_names_ok = all(str(item.get("label", "")).strip() for item in st.session_state.attachment_uploads)
+    attachment_count_ok = len(st.session_state.attachment_uploads) <= MAX_PRODUCT_ATTACHMENTS
     short_ok = len(st.session_state.description_short_editor.strip()) <= 500
     html_ok = True
     for html in (st.session_state.description_short_editor, st.session_state.description_editor):
@@ -269,9 +294,10 @@ def get_product_readiness(product: dict[str, Any]) -> dict[str, bool]:
         "has_description": has_description,
         "has_catalog": has_catalog,
         "has_images": has_images,
+        "attachments_ok": attachment_names_ok and attachment_count_ok,
         "short_ok": short_ok,
         "html_ok": html_ok,
-        "can_save": has_description and has_catalog and has_images and short_ok and html_ok,
+        "can_save": has_description and has_catalog and has_images and attachment_names_ok and attachment_count_ok and short_ok and html_ok,
     }
 
 
@@ -312,6 +338,8 @@ def render_readiness_panel(product: dict[str, Any]) -> dict[str, bool]:
         ("Opis", readiness["has_description"], "Uzupełnij krótki i pełny opis."),
         ("HTML", readiness["short_ok"] and readiness["html_ok"], "Krótki opis do 500 znaków, bez zakazanych tagów."),
     ]
+    if st.session_state.attachment_uploads:
+        rows.append(("Załączniki", readiness["attachments_ok"], "Nowe załączniki muszą mieć nazwy i mieścić się w limicie."))
     html_rows = []
     for label, ok, text in rows:
         pill_class = "step-ok" if ok else "step-missing"
@@ -326,6 +354,54 @@ def render_readiness_panel(product: dict[str, Any]) -> dict[str, bool]:
         )
     st.markdown(f'<div class="guide-box">{"".join(html_rows)}</div>', unsafe_allow_html=True)
     return readiness
+
+
+def render_save_summary(
+    *,
+    product: dict[str, Any],
+    assets: list[dict[str, Any]],
+    filters: list[dict[str, Any]],
+) -> dict[str, bool]:
+    """Show a readable save summary and return extra validation flags."""
+    existing_attachments = product_attachments(assets)
+    new_attachments = st.session_state.attachment_uploads
+    total_attachments = len(existing_attachments) + len(new_attachments)
+    attachment_names_ok = all(str(item.get("label", "")).strip() for item in new_attachments)
+    attachments_ok = total_attachments <= MAX_PRODUCT_ATTACHMENTS and attachment_names_ok
+
+    enabled_filters = [item for item in normalize_filters(filters) if item.get("enabled")]
+    catalog_label = (
+        "tryb ręczny bez karty"
+        if st.session_state.manual_without_catalog
+        else ("nowa karta" if st.session_state.catalog_upload else ("karta z bazy" if product_has_catalog(product) else "brak"))
+    )
+    image_label = (
+        f"{len(st.session_state.image_uploads)} nowe"
+        if st.session_state.image_uploads
+        else ("z bazy" if product_has_image(product) else "brak")
+    )
+
+    summary = pd.DataFrame(
+        [
+            {"Element": "Opis krótki i pełny", "Stan": "uzupełniony" if st.session_state.description_short_editor and st.session_state.description_editor else "brak"},
+            {"Element": "Karta katalogowa", "Stan": catalog_label},
+            {"Element": "Zdjęcia", "Stan": image_label},
+            {"Element": "Filtry aktywne", "Stan": str(len(enabled_filters))},
+            {"Element": "Nowe załączniki", "Stan": f"{len(new_attachments)} / {MAX_PRODUCT_ATTACHMENTS}"},
+            {"Element": "Załączniki łącznie", "Stan": f"{total_attachments} / {MAX_PRODUCT_ATTACHMENTS}"},
+        ]
+    )
+    st.dataframe(summary, use_container_width=True, hide_index=True)
+
+    if total_attachments > MAX_PRODUCT_ATTACHMENTS:
+        st.warning(f"Produkt może mieć maksymalnie {MAX_PRODUCT_ATTACHMENTS} załączników. Usuń część nowych plików.")
+    if new_attachments and not attachment_names_ok:
+        st.warning("Każdy nowy załącznik musi mieć wpisaną nazwę.")
+
+    return {
+        "attachments_ok": attachments_ok,
+        "total_attachments": total_attachments,
+    }
 
 
 def reset_editor_for_product(product: dict[str, Any]) -> None:
@@ -344,6 +420,7 @@ def reset_editor_for_product(product: dict[str, Any]) -> None:
     st.session_state.catalog_text = str(product.get("catalog_text", ""))
     st.session_state.manual_without_catalog = False
     st.session_state.image_uploads = []
+    st.session_state.attachment_uploads = []
     st.session_state.generated_data = None
 
 
@@ -498,6 +575,66 @@ def render_image_upload(product: dict[str, Any]) -> list[dict[str, Any]]:
     return images
 
 
+def render_attachment_upload(product: dict[str, Any], existing_attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    st.subheader("Załączniki produktu")
+    st.caption("Opcjonalnie dodaj instrukcje, deklaracje, dodatkowe PDF-y lub inne pliki produktu. Maksymalnie 8 załączników na produkt.")
+
+    if existing_attachments:
+        with st.expander(f"Zapisane załączniki ({len(existing_attachments)})", expanded=False):
+            attachment_df = pd.DataFrame(existing_attachments)
+            st.dataframe(
+                attachment_df[["role", "file_name", "storage_path"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "role": "Nazwa",
+                    "file_name": "Plik",
+                    "storage_path": "Ścieżka Storage",
+                },
+            )
+
+    remaining_slots = max(MAX_PRODUCT_ATTACHMENTS - len(existing_attachments), 0)
+    if remaining_slots <= 0:
+        st.info("Ten produkt ma już maksymalną liczbę załączników.")
+        st.session_state.attachment_uploads = []
+        return []
+
+    uploaded_files = st.file_uploader(
+        f"Dodaj załączniki, pozostało miejsc: {remaining_slots}",
+        type=ATTACHMENT_FILE_TYPES,
+        accept_multiple_files=True,
+        key=f"attachments_{product['id']}",
+    )
+
+    if uploaded_files and len(uploaded_files) > remaining_slots:
+        st.warning(f"Wybrano {len(uploaded_files)} plików, ale zapisane zostanie tylko pierwsze {remaining_slots}.")
+
+    attachments: list[dict[str, Any]] = []
+    for index, uploaded in enumerate((uploaded_files or [])[:remaining_slots], start=1):
+        default_label = _default_attachment_label(uploaded.name, index)
+        label = st.text_input(
+            f"Nazwa załącznika {index}",
+            value=default_label,
+            key=f"attachment_label_{product['id']}_{index}_{uploaded.name}",
+            help="Ta nazwa będzie widoczna w bazie i eksporcie.",
+        )
+        attachments.append(
+            {
+                "label": label.strip(),
+                "name": uploaded.name,
+                "type": uploaded.type,
+                "bytes": uploaded.getvalue(),
+            }
+        )
+
+    st.session_state.attachment_uploads = attachments
+    if attachments:
+        total_size = sum(len(item["bytes"]) for item in attachments)
+        st.success(f"Przygotowano {len(attachments)} załącznik/załączniki do zapisu.")
+        st.caption(f"Łączny rozmiar nowych załączników: {total_size / 1024 / 1024:.2f} MB.")
+    return attachments
+
+
 def render_generation(product: dict[str, Any]) -> None:
     st.subheader("Generowanie i edycja opisu")
     catalog_text = st.session_state.catalog_text
@@ -633,6 +770,12 @@ def safe_filename_part(value: str) -> str:
     return "_".join(part for part in cleaned.split("_") if part) or "export"
 
 
+def _default_attachment_label(file_name: str, index: int) -> str:
+    stem = os.path.splitext(file_name)[0].strip()
+    cleaned = " ".join(part for part in re.split(r"[_\-\s]+", stem) if part)
+    return cleaned or f"Załącznik {index}"
+
+
 def main() -> None:
     st.set_page_config(page_title="Generator opisów produktów PrestaShop", layout="wide")
     load_streamlit_secrets_to_env()
@@ -722,6 +865,7 @@ def main() -> None:
             render_catalog_upload(product)
         with material_columns[1]:
             render_image_upload(product)
+        render_attachment_upload(product, product_attachments(assets))
 
     with tabs[2]:
         st.info("Wygeneruj opis z karty albo wpisz go ręcznie. Przed zapisem przeczytaj całość i usuń dane, których nie da się potwierdzić.")
@@ -735,7 +879,9 @@ def main() -> None:
         render_description_preview()
         st.subheader("Zapis do Supabase")
         readiness = render_readiness_panel(product)
+        save_summary = render_save_summary(product=product, assets=assets, filters=filters)
         manual_without_catalog = bool(st.session_state.manual_without_catalog)
+        can_save = readiness["can_save"] and save_summary["attachments_ok"]
 
         if not readiness["has_description"]:
             st.info("Opis jest wymagany przed zapisem.")
@@ -750,9 +896,9 @@ def main() -> None:
         if product.get("status") == "done":
             st.caption("Produkt jest już uzupełniony. Jeśli nie wgrasz nowych plików, aplikacja zachowa istniejące zdjęcia i kartę.")
 
-        if st.button("Zapisz produkt w Supabase", disabled=not readiness["can_save"], type="primary"):
+        if st.button("Zapisz produkt w Supabase", disabled=not can_save, type="primary"):
             try:
-                with st.spinner("Zapisuję opis, filtry, zdjęcia i kartę katalogową do Supabase..."):
+                with st.spinner("Zapisuję opis, filtry, zdjęcia, załączniki i kartę katalogową do Supabase..."):
                     service.save_product_work(
                         product=product,
                         description_short=st.session_state.description_short_editor,
@@ -760,6 +906,7 @@ def main() -> None:
                         filters=filters,
                         operator=st.session_state.operator_name.strip(),
                         images=st.session_state.image_uploads,
+                        attachments=st.session_state.attachment_uploads,
                         catalog=None if manual_without_catalog else st.session_state.catalog_upload,
                         manual_without_catalog=manual_without_catalog,
                     )

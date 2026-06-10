@@ -29,6 +29,8 @@ def export_prestashop_csv(df: pd.DataFrame) -> bytes:
         "all_image_urls",
         "catalog_file",
         "catalog_url",
+        "attachments",
+        "attachment_urls",
         "operator",
     ]
     prepared = _sanitize_for_csv(df.copy().fillna(""))

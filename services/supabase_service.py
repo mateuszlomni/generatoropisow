@@ -116,7 +116,8 @@ class SupabaseService:
         filters: list[dict[str, Any]],
         operator: str,
         images: list[dict[str, Any]],
-        catalog: dict[str, Any] | None,
+        attachments: list[dict[str, Any]] | None = None,
+        catalog: dict[str, Any] | None = None,
         manual_without_catalog: bool = False,
     ) -> dict[str, Any]:
         """Upload assets and save final operator-approved product data."""
@@ -168,6 +169,13 @@ class SupabaseService:
         elif manual_without_catalog and not catalog_text:
             catalog_text = "Opis ręczny operatora - produkt bez osobnej karty katalogowej."
 
+        attachment_entries, attachment_url_entries = self._save_attachments(
+            product_uuid=product_uuid,
+            batch_name=batch_name,
+            id_product=id_product,
+            attachments=attachments or [],
+        )
+
         normalized_filters = normalize_filters(filters)
         self.upsert_filter_options(normalized_filters)
         update_payload = {
@@ -189,18 +197,72 @@ class SupabaseService:
             "catalog_file": catalog_path,
             "catalog_url": catalog_url,
             "catalog_text": catalog_text,
+            "attachments": " | ".join(attachment_entries),
+            "attachment_urls": " | ".join(attachment_url_entries),
             "operator": operator,
             "status": "done",
             "updated_at": datetime.now(UTC).isoformat(),
         }
 
-        response = (
-            self.client.table("products")
-            .update(update_payload)
-            .eq("id", product_uuid)
-            .execute()
-        )
+        try:
+            response = (
+                self.client.table("products")
+                .update(update_payload)
+                .eq("id", product_uuid)
+                .execute()
+            )
+        except Exception as exc:
+            if "attachments" not in str(exc) and "attachment_urls" not in str(exc):
+                raise
+            legacy_payload = {key: value for key, value in update_payload.items() if key not in {"attachments", "attachment_urls"}}
+            response = (
+                self.client.table("products")
+                .update(legacy_payload)
+                .eq("id", product_uuid)
+                .execute()
+            )
         return (response.data or [{}])[0]
+
+    def _save_attachments(
+        self,
+        *,
+        product_uuid: str,
+        batch_name: str,
+        id_product: str,
+        attachments: list[dict[str, Any]],
+    ) -> tuple[list[str], list[str]]:
+        """Append optional product attachments and return export-friendly summaries."""
+        existing_assets = [
+            asset
+            for asset in self.get_product_assets(product_uuid)
+            if str(asset.get("asset_type", "")).strip() == "attachment"
+        ]
+        if len(existing_assets) + len(attachments) > 8:
+            raise ValueError("Produkt może mieć maksymalnie 8 załączników.")
+
+        entries = [_asset_summary(asset, "storage_path") for asset in existing_assets]
+        url_entries = [_asset_summary(asset, "public_url") for asset in existing_assets if asset.get("public_url")]
+
+        for index, attachment in enumerate(attachments, start=len(existing_assets) + 1):
+            label = str(attachment.get("label", "")).strip() or f"Załącznik {index}"
+            file_bytes = attachment["bytes"]
+            asset = self.upload_asset(
+                product_id=product_uuid,
+                batch_name=batch_name,
+                id_product=id_product,
+                asset_type="attachment",
+                role=label,
+                file_name=attachment["name"],
+                file_bytes=file_bytes,
+                content_type=attachment.get("type", ""),
+                original_file_name=attachment["name"],
+                original_size_bytes=len(file_bytes),
+                stored_size_bytes=len(file_bytes),
+            )
+            entries.append(f"{label}: {asset['storage_path']}")
+            if asset["public_url"]:
+                url_entries.append(f"{label}: {asset['public_url']}")
+        return entries, url_entries
 
     def upload_asset(
         self,
@@ -223,7 +285,7 @@ class SupabaseService:
                 _safe_path_part(batch_name),
                 _safe_path_part(id_product),
                 asset_type,
-                f"{role}_{_safe_file_name(file_name)}",
+                f"{_safe_path_part(role)}_{_safe_file_name(file_name)}",
             ]
         )
 
@@ -348,6 +410,12 @@ def _existing_asset_values(product: dict[str, Any], all_field: str, first_field:
         for field in (first_field, second_field)
         if str(product.get(field, "") or "").strip()
     ]
+
+
+def _asset_summary(asset: dict[str, Any], value_field: str) -> str:
+    label = str(asset.get("role", "") or "").strip() or str(asset.get("file_name", "") or "").strip()
+    value = str(asset.get(value_field, "") or "").strip()
+    return f"{label}: {value}" if label and value else value
 
 
 def _normalize_supabase_url(value: str) -> str:

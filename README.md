@@ -72,6 +72,12 @@ W eksporcie dostępne są zarówno ścieżki Storage, jak i URL-e:
 - `image_main`, `image_template`, `image_1`, `image_2`, `all_images`,
 - `image_main_url`, `image_template_url`, `image_1_url`, `image_2_url`, `all_image_urls`.
 
+## Załączniki produktu
+
+Operator może dodać do produktu dodatkowe załączniki z nazwą, np. instrukcję, deklarację zgodności, dodatkowy PDF producenta albo plik pomocniczy. Limit to maksymalnie 8 załączników na produkt.
+
+Załączniki są zapisywane w Supabase Storage jako assety produktu z typem `attachment`. Eksport XLSX/CSV zawiera zbiorcze kolumny `attachments` oraz `attachment_urls`.
+
 ## Filtry i cechy PrestaShop
 
 AI próbuje wyciągnąć filtry/cechy produktu z karty katalogowej i pokazuje je w edytowalnej tabeli. Operator może poprawić wartości albo dopisać brakujące parametry ręcznie, ale tylko po sprawdzeniu dokumentacji.

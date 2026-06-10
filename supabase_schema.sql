@@ -31,6 +31,8 @@ create table if not exists public.products (
     catalog_file text not null default '',
     catalog_url text not null default '',
     catalog_text text not null default '',
+    attachments text not null default '',
+    attachment_urls text not null default '',
     status text not null default 'todo',
     operator text not null default '',
     updated_at timestamptz not null default now(),
@@ -47,6 +49,8 @@ alter table public.products add column if not exists image_1_url text not null d
 alter table public.products add column if not exists image_2_url text not null default '';
 alter table public.products add column if not exists all_image_urls text not null default '';
 alter table public.products add column if not exists catalog_url text not null default '';
+alter table public.products add column if not exists attachments text not null default '';
+alter table public.products add column if not exists attachment_urls text not null default '';
 
 create table if not exists public.product_assets (
     id uuid primary key default gen_random_uuid(),
