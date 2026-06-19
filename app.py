@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import os
 import re
+import uuid
 from html import escape
 from io import BytesIO
 from typing import Any
@@ -701,30 +702,80 @@ def render_filter_editor(product: dict[str, Any]) -> list[dict[str, Any]]:
                 st.session_state.filter_editor.append({"enabled": False, "name": selected_option, "value": "", "source": ""})
                 st.rerun()
 
-    filter_df = pd.DataFrame(st.session_state.filter_editor)
-    if filter_df.empty:
-        filter_df = pd.DataFrame(default_filter_rows(str(product.get("product_name", ""))))
-    if "enabled" not in filter_df.columns:
-        filter_df.insert(0, "enabled", False)
-    if filter_df.empty:
-        filter_df = pd.DataFrame(columns=["enabled", "name", "value", "source"])
+    if st.button("Dodaj pusty wiersz", key=f"add_blank_{product['id']}"):
+        st.session_state.filter_editor.append({"enabled": False, "name": "", "value": "", "source": ""})
+        st.rerun()
 
-    edited_df = st.data_editor(
-        filter_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "enabled": st.column_config.CheckboxColumn("Użyj w PrestaShop", default=False),
-            "name": st.column_config.TextColumn("Filtr / cecha"),
-            "value": st.column_config.TextColumn("Wartość"),
-            "source": st.column_config.TextColumn("Źródło z karty"),
-        },
-        key=f"filters_{product['id']}",
-    )
-    filters = normalize_filters(edited_df.to_dict("records"))
-    st.session_state.filter_editor = filters
-    return filters
+    # Każdy wiersz dostaje stały identyfikator, żeby klucze widgetów nie "przesuwały się"
+    # po usunięciu wiersza (inaczej Streamlit pokazałby stare wartości).
+    rows = st.session_state.filter_editor
+    for row in rows:
+        if not row.get("_uid"):
+            row["_uid"] = uuid.uuid4().hex
+
+    if not rows:
+        st.caption("Brak filtrów. Dodaj je ze słownika powyżej albo przyciskiem „Dodaj pusty wiersz”.")
+        st.session_state.filter_editor = []
+        return []
+
+    bulk = st.columns([1, 1, 6])
+    if bulk[0].button("Zaznacz wszystkie", key=f"check_all_{product['id']}"):
+        for row in rows:
+            row["enabled"] = True
+            st.session_state[f"f_enabled_{row['_uid']}"] = True
+        st.rerun()
+    if bulk[1].button("Odznacz wszystkie", key=f"uncheck_all_{product['id']}"):
+        for row in rows:
+            row["enabled"] = False
+            st.session_state[f"f_enabled_{row['_uid']}"] = False
+        st.rerun()
+
+    header = st.columns([1, 3, 3, 3, 1])
+    header[0].markdown("**Użyj**")
+    header[1].markdown("**Filtr / cecha**")
+    header[2].markdown("**Wartość**")
+    header[3].markdown("**Źródło z karty**")
+
+    new_rows: list[dict[str, Any]] = []
+    remove_uid: str | None = None
+    for row in rows:
+        uid = row["_uid"]
+        cols = st.columns([1, 3, 3, 3, 1])
+        enabled = cols[0].checkbox(
+            "Użyj w PrestaShop",
+            value=bool(row.get("enabled")),
+            key=f"f_enabled_{uid}",
+            label_visibility="collapsed",
+        )
+        name = cols[1].text_input(
+            "Filtr / cecha",
+            value=str(row.get("name", "")),
+            key=f"f_name_{uid}",
+            label_visibility="collapsed",
+        )
+        value = cols[2].text_input(
+            "Wartość",
+            value=str(row.get("value", "")),
+            key=f"f_value_{uid}",
+            label_visibility="collapsed",
+        )
+        source = cols[3].text_input(
+            "Źródło z karty",
+            value=str(row.get("source", "")),
+            key=f"f_source_{uid}",
+            label_visibility="collapsed",
+        )
+        if cols[4].button("🗑", key=f"f_del_{uid}", help="Usuń ten filtr"):
+            remove_uid = uid
+        new_rows.append({"enabled": enabled, "name": name, "value": value, "source": source, "_uid": uid})
+
+    if remove_uid is not None:
+        new_rows = [row for row in new_rows if row["_uid"] != remove_uid]
+        st.session_state.filter_editor = new_rows
+        st.rerun()
+
+    st.session_state.filter_editor = new_rows
+    return normalize_filters(new_rows)
 
 
 def render_description_preview() -> None:
